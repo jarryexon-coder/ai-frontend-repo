@@ -1,0 +1,194 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity,
+  Alert 
+} from 'react-native';
+
+const FavoritesScreen = () => {
+  const [favorites, setFavorites] = useState([]);
+
+  // Mock favorite players data
+  useEffect(() => {
+    setFavorites([
+      {
+        id: 1,
+        name: 'LeBron James',
+        team: 'Lakers',
+        position: 'F',
+        stats: { points: 25.3, rebounds: 7.8, assists: 7.3 }
+      },
+      {
+        id: 2,
+        name: 'Stephen Curry',
+        team: 'Warriors',
+        position: 'G',
+        stats: { points: 27.5, rebounds: 4.5, assists: 5.8 }
+      },
+      {
+        id: 3,
+        name: 'Kevin Durant',
+        team: 'Suns',
+        position: 'F',
+        stats: { points: 26.8, rebounds: 6.7, assists: 4.2 }
+      }
+    ]);
+  }, []);
+
+  const removeFavorite = (playerId) => {
+    Alert.alert(
+      'Remove Favorite',
+      'Are you sure you want to remove this player from favorites?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Remove', 
+          style: 'destructive',
+          onPress: () => {
+            setFavorites(favorites.filter(player => player.id !== playerId));
+          }
+        }
+      ]
+    );
+  };
+
+  return (
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>My Favorites</Text>
+      
+      {favorites.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>No favorites yet</Text>
+          <Text style={styles.emptySubtext}>
+            Add players to your favorites to see them here
+          </Text>
+        </View>
+      ) : (
+        favorites.map((player) => (
+          <View key={player.id} style={styles.playerCard}>
+            <View style={styles.playerHeader}>
+              <View>
+                <Text style={styles.playerName}>{player.name}</Text>
+                <Text style={styles.playerInfo}>{player.team} • {player.position}</Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.removeButton}
+                onPress={() => removeFavorite(player.id)}
+              >
+                <Text style={styles.removeButtonText}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.statsContainer}>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{player.stats.points}</Text>
+                <Text style={styles.statLabel}>PTS</Text>
+              </View>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{player.stats.rebounds}</Text>
+                <Text style={styles.statLabel}>REB</Text>
+              </View>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{player.stats.assists}</Text>
+                <Text style={styles.statLabel}>AST</Text>
+              </View>
+            </View>
+          </View>
+        ))
+      )}
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: '#f8fafc',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#1e293b',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    fontSize: 18,
+    color: '#64748b',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+  },
+  playerCard: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  playerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  playerName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  playerInfo: {
+    fontSize: 14,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  removeButton: {
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  removeButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingTop: 12,
+  },
+  stat: {
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+  },
+});
+
+export default FavoritesScreen;

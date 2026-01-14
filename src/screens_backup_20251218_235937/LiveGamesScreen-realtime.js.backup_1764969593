@@ -1,0 +1,215 @@
+// src/screens/LiveGamesScreen-realtime.js
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import ApiService from '../services/api-service';
+
+const LiveGamesScreen = () => {
+  const [games, setGames] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const [isOnline, setIsOnline] = useState(false); // Added local isOnline state
+
+  const loadGames = async () => {
+    try {
+      console.log('🔄 LiveGamesScreen: Loading games...');
+      const result = await ApiService.getTodayGames();
+      
+      if (result.success && result.data) {
+        console.log('✅ LiveGamesScreen: Games loaded', result.data.length);
+        setGames(result.data);
+        setIsOnline(true); // Set online when successful
+      } else {
+        console.log('🟡 LiveGamesScreen: Using empty games data');
+        setGames([]);
+        setIsOnline(false); // Set offline when no data
+      }
+    } catch (error) {
+      console.error('❌ LiveGamesScreen: Error loading games', error);
+      setGames([]);
+      setIsOnline(false); // Set offline on error
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+      setLastUpdate(new Date());
+    }
+  };
+
+  useEffect(() => {
+    loadGames();
+    
+    // Poll for updates every 30 seconds instead of WebSocket
+    const interval = setInterval(loadGames, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadGames();
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text>Loading live games...</Text>
+        <Text style={styles.debugText}>Checking backend connection...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView 
+      style={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
+      <View style={styles.header}>
+        <Text style={styles.title}>🏀 Live Games</Text>
+        <Text style={styles.subtitle}>
+          {/* FIXED: Replaced ApiService.isOnline with local isOnline state */}
+          {isOnline ? 'Live Data' : 'Offline Mode'}
+        </Text>
+        <Text style={styles.updateText}>
+          Last update: {lastUpdate ? lastUpdate.toLocaleTimeString() : 'Never'}
+        </Text>
+      </View>
+
+      {/* Debug Info */}
+      <View style={styles.debugCard}>
+        <Text style={styles.debugTitle}>Connection Status</Text>
+        <Text style={styles.debugText}>
+          {/* FIXED: Replaced ApiService.isOnline with local isOnline state */}
+          Backend: {isOnline ? '✅ Online' : '❌ Offline'}
+        </Text>
+        <Text style={styles.debugText}>
+          URL: {ApiService.baseURL}
+        </Text>
+        <Text style={styles.debugText}>
+          Games loaded: {games.length}
+        </Text>
+      </View>
+
+      {games.length > 0 ? (
+        games.map((game, index) => { const key = `game-${index}`; return (
+          <View key={index} style={styles.gameCard}>
+            <Text style={styles.teams}>
+              {game.homeTeam} vs {game.awayTeam}
+            </Text>
+            <Text style={styles.score}>
+              {game.homeScore} - {game.awayScore}
+            </Text>
+            <Text style={styles.status}>{game.status}</Text>
+            <Text style={styles.time}>{game.time}</Text>
+          </View>
+        ))
+      ) : (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>No games available</Text>
+          <Text style={styles.debugText}>
+            Check if backend is running at {ApiService.baseURL}
+          </Text>
+        </View>
+      )}
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  debugText: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontStyle: 'italic',
+    marginTop: 5,
+  },
+  header: {
+    backgroundColor: '#1e40af',
+    padding: 20,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#dbeafe',
+    marginTop: 5,
+  },
+  updateText: {
+    fontSize: 12,
+    color: '#93c5fd',
+    marginTop: 5,
+  },
+  gameCard: {
+    backgroundColor: 'white',
+    margin: 10,
+    padding: 15,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  teams: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  score: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#059669',
+    marginVertical: 5,
+  },
+  status: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  time: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginTop: 5,
+  },
+  emptyCard: {
+    backgroundColor: 'white',
+    margin: 20,
+    padding: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#64748b',
+    marginBottom: 10,
+  },
+  debugCard: {
+    backgroundColor: '#fef3c7',
+    margin: 10,
+    padding: 15,
+    borderRadius: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#f59e0b',
+  },
+  debugTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#92400e',
+    marginBottom: 10,
+  },
+});
+
+export default LiveGamesScreen;

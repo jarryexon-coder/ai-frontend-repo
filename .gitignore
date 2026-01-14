@@ -1,0 +1,13 @@
+# Secret Keys & Credentials
+revenuecat-key.json
+*.key.json
+*.p12
+*.pem
+.env
+.env.local
+
+# Project files
+node_modules/
+.expo/
+dist/
+web-build/

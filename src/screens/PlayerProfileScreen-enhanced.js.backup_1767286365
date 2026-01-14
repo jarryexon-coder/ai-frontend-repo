@@ -1,0 +1,1658 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Platform,
+  Dimensions,
+  RefreshControl,
+  FlatList,
+  SafeAreaView,
+  TextInput,
+  Alert
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import SearchBar from '../components/SearchBar';
+import { useSearch } from '../providers/SearchProvider';
+import { useSportsData } from '../hooks/useSportsData';
+
+// NEW: Import navigation helper
+import { useAppNavigation } from '../navigation/NavigationHelper';
+
+const { width } = Dimensions.get('window');
+
+// Firebase Analytics helper function
+const logAnalyticsEvent = async (eventName, eventParams = {}) => {
+  try {
+    const eventData = {
+      event: eventName,
+      params: eventParams,
+      timestamp: new Date().toISOString(),
+      platform: Platform.OS,
+    };
+
+    console.log(`📊 Player Analytics Event: ${eventName}`, eventParams);
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      try {
+        const firebaseApp = await import('firebase/app');
+        const firebaseAnalytics = await import('firebase/analytics');
+        
+        let app;
+        if (firebaseApp.getApps().length === 0) {
+          const firebaseConfig = {
+            apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyCi7YQ-vawFT3sIr1i8yuhhx-1vSplAneA",
+            authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "nba-fantasy-ai.firebaseapp.com",
+            projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "nba-fantasy-ai",
+            storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "nba-fantasy-ai.appspot.com",
+            messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "718718403866",
+            appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:718718403866:web:e26e10994d62799a048379",
+            measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-BLTPX9LJ7K"
+          };
+          
+          app = firebaseApp.initializeApp(firebaseConfig);
+        } else {
+          app = firebaseApp.getApp();
+        }
+        
+        const analytics = firebaseAnalytics.getAnalytics(app);
+        if (analytics) {
+          await firebaseAnalytics.logEvent(analytics, eventName, eventParams);
+        }
+      } catch (firebaseError) {
+        console.warn('Firebase analytics error:', firebaseError.message);
+      }
+    }
+    
+    try {
+      const existingEvents = JSON.parse(await AsyncStorage.getItem('analytics_events') || '[]');
+      existingEvents.push(eventData);
+      if (existingEvents.length > 100) {
+        existingEvents.splice(0, existingEvents.length - 100);
+      }
+      await AsyncStorage.setItem('analytics_events', JSON.stringify(existingEvents));
+    } catch (storageError) {
+      console.warn('Could not save analytics event locally:', storageError.message);
+    }
+  } catch (error) {
+    console.warn('Analytics event failed:', error.message);
+  }
+};
+
+// AI Prompt Generator Component
+const AIPromptGenerator = ({ playerData }) => {
+  const [suggestedPrompts, setSuggestedPrompts] = useState([]);
+  const [customPrompt, setCustomPrompt] = useState('');
+
+  useEffect(() => {
+    generateSuggestedPrompts();
+  }, [playerData]);
+
+  const generateSuggestedPrompts = () => {
+    const prompts = [
+      `Analyze ${playerData?.name}'s fantasy value for next week`,
+      `Compare ${playerData?.name}'s performance with similar players`,
+      `Predict ${playerData?.name}'s stats for the upcoming game`,
+      `What are ${playerData?.name}'s strengths and weaknesses?`,
+      `Recommend lineup strategy with ${playerData?.name}`
+    ];
+    setSuggestedPrompts(prompts);
+  };
+
+  const handlePromptSelect = async (prompt) => {
+    await logAnalyticsEvent('ai_prompt_selected', {
+      player_name: playerData?.name,
+      prompt_type: 'suggested',
+      prompt_text: prompt,
+    });
+    // Navigate to AI analysis screen or trigger AI analysis
+    console.log('AI Prompt selected:', prompt);
+  };
+
+  const handleCustomPromptSubmit = async () => {
+    if (customPrompt.trim()) {
+      await logAnalyticsEvent('ai_prompt_submitted', {
+        player_name: playerData?.name,
+        prompt_type: 'custom',
+        prompt_text: customPrompt,
+      });
+      setCustomPrompt('');
+      console.log('Custom AI Prompt:', customPrompt);
+    }
+  };
+
+  return (
+    <View style={styles.aiPromptContainer}>
+      <Text style={styles.aiPromptTitle}>🤖 AI Assistant</Text>
+      <Text style={styles.aiPromptSubtitle}>Get insights about this player</Text>
+      
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.promptScroll}>
+        {suggestedPrompts.map((prompt, index) => (
+          <TouchableOpacity
+            key={index}
+            style={styles.promptChip}
+            onPress={() => handlePromptSelect(prompt)}
+          >
+            <Ionicons name="sparkles" size={14} color="#3b82f6" />
+            <Text style={styles.promptChipText}>{prompt}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      
+      <View style={styles.customPromptContainer}>
+        <Text style={styles.customPromptLabel}>Ask your own question:</Text>
+        <View style={styles.customPromptInput}>
+          <Ionicons name="chatbubble-outline" size={20} color="#6b7280" style={styles.promptIcon} />
+          <TextInput
+            style={styles.customPromptTextInput}
+            placeholder="e.g., Should I start this player tonight?"
+            value={customPrompt}
+            onChangeText={setCustomPrompt}
+            multiline
+            maxLength={200}
+          />
+          <TouchableOpacity
+            style={[styles.submitButton, !customPrompt.trim() && styles.submitButtonDisabled]}
+            onPress={handleCustomPromptSubmit}
+            disabled={!customPrompt.trim()}
+          >
+            <Ionicons name="arrow-up" size={20} color="white" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+};
+
+export default function PlayerProfileScreen({ route }) {
+  const { playerData } = route.params || {};
+  
+  // NEW: Use the app navigation helper instead of regular useNavigation
+  const navigation = useAppNavigation();
+  
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [playerStats, setPlayerStats] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredData, setFilteredData] = useState([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searchResultsInfo, setSearchResultsInfo] = useState('');
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'stats', 'trends'
+  
+  const { searchHistory, addToSearchHistory } = useSearch();
+  const { data: sportsData } = useSportsData();
+
+  // NEW: Navigation helper functions
+  const handleNavigateToGameDetails = () => {
+    navigation.goToGameDetails();
+    logAnalyticsEvent('player_profile_navigate_game_details', {
+      player_name: enhancedPlayerData?.name || 'Unknown',
+      player_team: enhancedPlayerData?.team || 'Unknown',
+      screen_name: 'Player Profile Screen'
+    });
+  };
+
+  const handleNavigateToAnalytics = () => {
+    navigation.goToAnalytics();
+    logAnalyticsEvent('player_profile_navigate_analytics', {
+      player_name: enhancedPlayerData?.name || 'Unknown',
+      player_team: enhancedPlayerData?.team || 'Unknown',
+      screen_name: 'Player Profile Screen'
+    });
+  };
+
+  const handleNavigateToPredictions = () => {
+    navigation.goToPredictions();
+    logAnalyticsEvent('player_profile_navigate_predictions', {
+      player_name: enhancedPlayerData?.name || 'Unknown',
+      player_team: enhancedPlayerData?.team || 'Unknown',
+      screen_name: 'Player Profile Screen'
+    });
+  };
+
+  const handleNavigateToFantasy = () => {
+    navigation.goToFantasy();
+    logAnalyticsEvent('player_profile_navigate_fantasy', {
+      player_name: enhancedPlayerData?.name || 'Unknown',
+      player_team: enhancedPlayerData?.team || 'Unknown',
+      screen_name: 'Player Profile Screen'
+    });
+  };
+
+  // NEW: Navigation menu component
+  const renderNavigationMenu = () => (
+    <View style={styles.navigationMenu}>
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToGameDetails()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="basketball" size={20} color="white" />
+        <Text style={styles.navButtonText}>Games</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToAnalytics()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="analytics" size={20} color="white" />
+        <Text style={styles.navButtonText}>Analytics</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToPredictions()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="trending-up" size={20} color="white" />
+        <Text style={styles.navButtonText}>AI Predict</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToFantasy()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="trophy" size={20} color="white" />
+        <Text style={styles.navButtonText}>Fantasy</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Combine all players from all sports
+  const getAllPlayers = () => {
+    const players = [];
+    if (sportsData.nba?.players) players.push(...sportsData.nba.players);
+    if (sportsData.nfl?.players) players.push(...sportsData.nfl.players);
+    if (sportsData.nhl?.players) players.push(...sportsData.nhl.players);
+    if (sportsData.mlb?.players) players.push(...sportsData.mlb.players);
+    return players;
+  };
+
+  const handlePlayerSearch = useCallback((query) => {
+    setSearchQuery(query);
+    addToSearchHistory(query);
+    
+    if (!query.trim()) {
+      setShowSearchResults(false);
+      setFilteredData([]);
+      setSearchResultsInfo('');
+      return;
+    }
+    
+    const allPlayers = getAllPlayers();
+    const results = allPlayers.filter(player =>
+      (player.name || '').toLowerCase().includes(query.toLowerCase()) ||
+      (player.team || '').toLowerCase().includes(query.toLowerCase()) ||
+      (player.position || '').toLowerCase().includes(query.toLowerCase())
+    );
+    
+    setFilteredData(results);
+    setShowSearchResults(true);
+    
+    // Set search results info
+    if (results.length === 0) {
+      setSearchResultsInfo(`No players found for "${query}"`);
+    } else {
+      setSearchResultsInfo(`${results.length} of ${allPlayers.length} players match "${query}"`);
+    }
+    
+    // Log search analytics
+    logAnalyticsEvent('player_profile_search', {
+      search_query: query,
+      results_count: results.length,
+      total_players: allPlayers.length,
+      player_name: enhancedPlayerData?.name || 'Unknown',
+    });
+  }, [sportsData, addToSearchHistory]);
+
+  const handleSelectPlayer = (player) => {
+    logAnalyticsEvent('player_profile_search_select', {
+      selected_player: player.name,
+      previous_player: enhancedPlayerData?.name || 'Unknown',
+    });
+    
+    setShowSearchResults(false);
+    setSearchQuery('');
+    setSearchResultsInfo('');
+    
+    // Navigate to the selected player's profile
+    navigation.replace('PlayerProfile', { 
+      playerData: player,
+      playerName: player.name,
+      playerTeam: player.team,
+      playerPosition: player.position,
+      playerNumber: player.number,
+      playerAge: player.age,
+      playerHeight: player.height,
+      playerWeight: player.weight,
+      playerStats: player.stats,
+      playerSalary: player.salary,
+      playerContract: player.contract,
+      playerFantasyPoints: player.fantasyPoints,
+      playerHighlights: player.highlights,
+      playerTrend: player.trend,
+      sport: player.sport || 'NBA',
+      playerEfficiency: calculateEfficiency(player.stats),
+      playerValueScore: calculateValueScore(player)
+    });
+  };
+
+  const calculateEfficiency = (stats) => {
+    if (!stats) return 0;
+    return ((stats.points || 0) + (stats.rebounds || 0) + (stats.assists || 0) + 
+            (stats.steals || 0) + (stats.blocks || 0)) / (stats.games || 1);
+  };
+
+  const calculateValueScore = (player) => {
+    let score = 0;
+    if (player.stats) {
+      score += (player.stats.points || 0) * 2;
+      score += (player.stats.rebounds || 0) * 1.2;
+      score += (player.stats.assists || 0) * 1.5;
+      score += (player.stats.steals || 0) * 3;
+      score += (player.stats.blocks || 0) * 3;
+    }
+    if (player.fantasyPoints) score += player.fantasyPoints * 0.5;
+    if (player.trend === 'up') score += 10;
+    else if (player.trend === 'down') score -= 5;
+    
+    return Math.round(score);
+  };
+
+  const enhancedPlayerData = {
+    name: playerData?.name || 'LeBron James',
+    team: playerData?.team || 'LAL',
+    position: playerData?.position || 'SF',
+    number: playerData?.number || '23',
+    height: playerData?.height || "6'9\"",
+    weight: playerData?.weight || '250 lbs',
+    age: playerData?.age || '39',
+    college: playerData?.college || 'St. Vincent-St. Mary HS',
+    experience: playerData?.experience || '21st Season',
+    points: playerData?.points || playerData?.stats?.points || 25.5,
+    rebounds: playerData?.rebounds || playerData?.stats?.rebounds || 7.2,
+    assists: playerData?.assists || playerData?.stats?.assists || 6.8,
+    steals: playerData?.steals || 1.2,
+    blocks: playerData?.blocks || 0.8,
+    fgPercentage: playerData?.fgPercentage || 48.5,
+    threePercentage: playerData?.threePercentage || 36.8,
+    ftPercentage: playerData?.ftPercentage || 75.2,
+    efficiency: playerData?.efficiency || 28.4,
+    salary: playerData?.salary || '$47.6M',
+    contract: playerData?.contract || '2 years',
+    fantasyPoints: playerData?.fantasyPoints || 42,
+    trend: playerData?.trend || 'stable',
+    highlights: playerData?.highlights || ['4x NBA Champion', '4x MVP'],
+  };
+
+  useEffect(() => {
+    const logScreenView = async () => {
+      await logAnalyticsEvent('player_profile_view', {
+        player_name: enhancedPlayerData.name,
+        player_team: enhancedPlayerData.team,
+        player_position: enhancedPlayerData.position,
+        player_points: enhancedPlayerData.points,
+        player_rebounds: enhancedPlayerData.rebounds,
+        player_assists: enhancedPlayerData.assists,
+        screen_name: 'PlayerProfileScreen',
+        timestamp: new Date().toISOString(),
+      });
+    };
+    
+    logScreenView();
+    loadPlayerStats();
+  }, []);
+
+  const loadPlayerStats = async () => {
+    try {
+      setLoading(true);
+      await logAnalyticsEvent('player_profile_load_stats', {
+        player_name: enhancedPlayerData.name,
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      const stats = {
+        seasonAverages: {
+          points: enhancedPlayerData.points,
+          rebounds: enhancedPlayerData.rebounds,
+          assists: enhancedPlayerData.assists,
+          steals: enhancedPlayerData.steals,
+          blocks: enhancedPlayerData.blocks,
+        },
+        recentGames: [
+          { date: 'Yesterday', opponent: 'vs GSW', points: 28, rebounds: 8, assists: 7, result: 'W' },
+          { date: 'Mar 15', opponent: '@ SAC', points: 24, rebounds: 6, assists: 9, result: 'L' },
+          { date: 'Mar 13', opponent: 'vs MIL', points: 31, rebounds: 5, assists: 5, result: 'W' },
+          { date: 'Mar 10', opponent: '@ MIN', points: 26, rebounds: 9, assists: 8, result: 'L' },
+          { date: 'Mar 8', opponent: 'vs PHX', points: 29, rebounds: 7, assists: 6, result: 'W' },
+        ],
+        aiAnalysis: {
+          projection: 'Strong matchup against weak defensive team. Expect above-average scoring.',
+          confidence: 82,
+          keyInsights: [
+            'Excellent in transition offense',
+            'Strong finisher at the rim (75% FG within 5ft)',
+            'High usage rate leads to consistent production',
+            'Veteran leadership boosts team performance in close games'
+          ],
+          matchupRating: 8.5,
+          fantasyValue: 9.2,
+        },
+        trends: [
+          { label: 'Scoring Trend', value: '+2.1', direction: 'up' },
+          { label: 'Assist Trend', value: '+0.8', direction: 'up' },
+          { label: 'Rebound Trend', value: '-0.3', direction: 'down' },
+          { label: 'Efficiency', value: '+1.2', direction: 'up' },
+        ]
+      };
+      
+      setPlayerStats(stats);
+      setLastUpdated(new Date());
+      
+      await logAnalyticsEvent('player_profile_stats_loaded', {
+        player_name: enhancedPlayerData.name,
+        stats_count: stats.recentGames.length,
+      });
+    } catch (error) {
+      console.error('Error loading player stats:', error);
+      await logAnalyticsEvent('player_profile_load_error', {
+        error: error.message,
+        player_name: enhancedPlayerData.name,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await logAnalyticsEvent('player_profile_refresh', {
+      player_name: enhancedPlayerData.name,
+    });
+    await loadPlayerStats();
+    setRefreshing(false);
+  };
+
+  const handleBackPress = async () => {
+    await logAnalyticsEvent('player_profile_back', {
+      player_name: enhancedPlayerData.name,
+      time_spent: Math.floor((new Date() - new Date(lastUpdated)) / 1000) + 's',
+    });
+    navigation.goBack();
+  };
+
+  const handleStatClick = async (statName, statValue) => {
+    await logAnalyticsEvent('player_profile_stat_click', {
+      player_name: enhancedPlayerData.name,
+      stat_name: statName,
+      stat_value: statValue,
+    });
+  };
+
+  const handleGameClick = async (game) => {
+    await logAnalyticsEvent('player_profile_game_click', {
+      player_name: enhancedPlayerData.name,
+      game_date: game.date,
+      opponent: game.opponent,
+      points: game.points,
+    });
+    
+    // NEW: Navigate to game details when clicking on a game
+    handleNavigateToGameDetails();
+  };
+
+  const renderSearchBar = () => (
+    <View style={styles.searchSection}>
+      <SearchBar
+        placeholder="Search for other players..."
+        onSearch={handlePlayerSearch}
+        searchHistory={searchHistory}
+        value={searchQuery}
+        style={styles.homeSearchBar}
+      />
+      
+      {searchQuery.trim() && (
+        <View style={styles.searchResultsInfo}>
+          <Text style={styles.searchResultsText}>
+            {searchResultsInfo}
+          </Text>
+          <TouchableOpacity 
+            onPress={() => {
+              setSearchQuery('');
+              setShowSearchResults(false);
+              setSearchResultsInfo('');
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.clearSearchText}>Clear</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderSearchResults = () => {
+    if (!showSearchResults) return null;
+
+    return (
+      <View style={styles.searchResultsContainer}>
+        <View style={styles.searchResultsHeader}>
+          <Text style={styles.searchResultsTitle}>
+            Search Results ({filteredData.length})
+          </Text>
+          <TouchableOpacity 
+            onPress={() => {
+              setShowSearchResults(false);
+              setSearchQuery('');
+              setSearchResultsInfo('');
+            }}
+          >
+            <Ionicons name="close" size={24} color="#666" />
+          </TouchableOpacity>
+        </View>
+        
+        {filteredData.length === 0 ? (
+          <View style={styles.noResultsContainer}>
+            <Ionicons name="search-outline" size={48} color="#ccc" />
+            <Text style={styles.noResultsText}>No players found</Text>
+            <Text style={styles.noResultsSubtext}>
+              Try searching by name, team, or position
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredData}
+            keyExtractor={(item, index) => item.id?.toString() || index.toString()}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.playerResultItem}
+                onPress={() => handleSelectPlayer(item)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.playerResultInfo}>
+                  <Text style={styles.playerResultName}>{item.name}</Text>
+                  <Text style={styles.playerResultDetails}>
+                    {item.team} • {item.position} • {item.stats?.points || item.points || 'N/A'} PPG
+                  </Text>
+                </View>
+                <View style={styles.playerResultStats}>
+                  <View style={styles.resultStatItem}>
+                    <Text style={styles.resultStatLabel}>PTS</Text>
+                    <Text style={styles.resultStatValue}>{item.stats?.points || item.points || 'N/A'}</Text>
+                  </View>
+                  <View style={styles.resultStatItem}>
+                    <Text style={styles.resultStatLabel}>REB</Text>
+                    <Text style={styles.resultStatValue}>{item.stats?.rebounds || 'N/A'}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#999" />
+                </View>
+              </TouchableOpacity>
+            )}
+            contentContainerStyle={styles.searchResultsList}
+          />
+        )}
+      </View>
+    );
+  };
+
+  const renderHeader = () => (
+    <View style={styles.headerContainer}>
+      <LinearGradient
+        colors={['#0f766e', '#14b8a6']}
+        style={styles.header}
+      >
+        <View style={styles.headerTop}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={handleBackPress}
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={async () => {
+                await logAnalyticsEvent('player_profile_share', {
+                  player_name: enhancedPlayerData.name,
+                });
+              }}
+            >
+              <Ionicons name="share-outline" size={22} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={async () => {
+                await logAnalyticsEvent('player_profile_favorite', {
+                  player_name: enhancedPlayerData.name,
+                });
+              }}
+            >
+              <Ionicons name="star-outline" size={22} color="white" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        <View style={styles.playerInfo}>
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{enhancedPlayerData.name.charAt(0)}</Text>
+            </View>
+            <View style={styles.playerNumber}>
+              <Text style={styles.playerNumberText}>{enhancedPlayerData.number}</Text>
+            </View>
+          </View>
+          
+          <Text style={styles.playerName}>{enhancedPlayerData.name}</Text>
+          <Text style={styles.playerTeam}>
+            {enhancedPlayerData.team} • {enhancedPlayerData.position} • #{enhancedPlayerData.number}
+          </Text>
+          
+          <View style={styles.playerDetails}>
+            <View style={styles.detailItem}>
+              <Ionicons name="body" size={16} color="rgba(255,255,255,0.8)" />
+              <Text style={styles.detailText}>{enhancedPlayerData.height} | {enhancedPlayerData.weight}</Text>
+            </View>
+            <View style={styles.detailItem}>
+              <Ionicons name="calendar" size={16} color="rgba(255,255,255,0.8)" />
+              <Text style={styles.detailText}>{enhancedPlayerData.age} yrs | {enhancedPlayerData.experience}</Text>
+            </View>
+            <View style={styles.detailItem}>
+              <Ionicons name="school" size={16} color="rgba(255,255,255,0.8)" />
+              <Text style={styles.detailText}>{enhancedPlayerData.college}</Text>
+            </View>
+          </View>
+          
+          {/* NEW: Add navigation menu to header */}
+          <View style={styles.navigationMenuContainer}>
+            {renderNavigationMenu()}
+          </View>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+
+  const renderTabNavigation = () => (
+    <View style={styles.tabContainer}>
+      <TouchableOpacity 
+        style={[styles.tabButton, activeTab === 'overview' && styles.tabButtonActive]}
+        onPress={() => setActiveTab('overview')}
+      >
+        <Text style={[styles.tabText, activeTab === 'overview' && styles.tabTextActive]}>
+          Overview
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity 
+        style={[styles.tabButton, activeTab === 'stats' && styles.tabButtonActive]}
+        onPress={() => setActiveTab('stats')}
+      >
+        <Text style={[styles.tabText, activeTab === 'stats' && styles.tabTextActive]}>
+          Stats
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity 
+        style={[styles.tabButton, activeTab === 'trends' && styles.tabButtonActive]}
+        onPress={() => setActiveTab('trends')}
+      >
+        <Text style={[styles.tabText, activeTab === 'trends' && styles.tabTextActive]}>
+          Trends
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderStatsContent = () => (
+    <>
+      {/* AI Prompt Generator */}
+      <AIPromptGenerator playerData={enhancedPlayerData} />
+      
+      {/* Season Stats */}
+      <View style={styles.sectionContainer}>
+        <Text style={styles.sectionTitle}>📊 Season Stats</Text>
+        <View style={styles.statsGrid}>
+          <TouchableOpacity 
+            style={styles.statBox}
+            onPress={() => handleStatClick('Points', enhancedPlayerData.points)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.statValue}>{enhancedPlayerData.points}</Text>
+            <Text style={styles.statLabel}>Points</Text>
+            <View style={styles.statTrend}>
+              <Ionicons name="trending-up" size={14} color="#10b981" />
+              <Text style={styles.statTrendText}>+2.1</Text>
+            </View>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.statBox}
+            onPress={() => handleStatClick('Rebounds', enhancedPlayerData.rebounds)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.statValue}>{enhancedPlayerData.rebounds}</Text>
+            <Text style={styles.statLabel}>Rebounds</Text>
+            <View style={styles.statTrend}>
+              <Ionicons name="trending-down" size={14} color="#ef4444" />
+              <Text style={styles.statTrendText}>-0.3</Text>
+            </View>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.statBox}
+            onPress={() => handleStatClick('Assists', enhancedPlayerData.assists)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.statValue}>{enhancedPlayerData.assists}</Text>
+            <Text style={styles.statLabel}>Assists</Text>
+            <View style={styles.statTrend}>
+              <Ionicons name="trending-up" size={14} color="#10b981" />
+              <Text style={styles.statTrendText}>+0.8</Text>
+            </View>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.statBox}
+            onPress={() => handleStatClick('Efficiency', enhancedPlayerData.efficiency)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.statValue}>{enhancedPlayerData.efficiency}</Text>
+            <Text style={styles.statLabel}>Efficiency</Text>
+            <View style={styles.statTrend}>
+              <Ionicons name="trending-up" size={14} color="#10b981" />
+              <Text style={styles.statTrendText}>+1.2</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.additionalStats}>
+          <View style={styles.additionalStat}>
+            <Text style={styles.additionalStatLabel}>FG%</Text>
+            <Text style={styles.additionalStatValue}>{enhancedPlayerData.fgPercentage}%</Text>
+          </View>
+          <View style={styles.additionalStat}>
+            <Text style={styles.additionalStatLabel}>3P%</Text>
+            <Text style={styles.additionalStatValue}>{enhancedPlayerData.threePercentage}%</Text>
+          </View>
+          <View style={styles.additionalStat}>
+            <Text style={styles.additionalStatLabel}>FT%</Text>
+            <Text style={styles.additionalStatValue}>{enhancedPlayerData.ftPercentage}%</Text>
+          </View>
+          <View style={styles.additionalStat}>
+            <Text style={styles.additionalStatLabel}>Steals</Text>
+            <Text style={styles.additionalStatValue}>{enhancedPlayerData.steals}</Text>
+          </View>
+          <View style={styles.additionalStat}>
+            <Text style={styles.additionalStatLabel}>Blocks</Text>
+            <Text style={styles.additionalStatValue}>{enhancedPlayerData.blocks}</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* AI Analysis - Now Free for all users */}
+      {playerStats?.aiAnalysis && (
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>🤖 AI Analysis</Text>
+          <View style={styles.analysisCard}>
+            <View style={styles.analysisHeader}>
+              <Ionicons name="analytics" size={20} color="#0f766e" />
+              <Text style={styles.analysisTitle}>Tonight's Projection</Text>
+              <View style={styles.confidenceBadge}>
+                <Text style={styles.confidenceText}>{playerStats.aiAnalysis.confidence}% Confidence</Text>
+              </View>
+            </View>
+            <Text style={styles.analysisText}>
+              {playerStats.aiAnalysis.projection}
+            </Text>
+            
+            <View style={styles.analysisMetrics}>
+              <View style={styles.analysisMetric}>
+                <Text style={styles.analysisMetricLabel}>Matchup Rating</Text>
+                <Text style={styles.analysisMetricValue}>{playerStats.aiAnalysis.matchupRating}/10</Text>
+              </View>
+              <View style={styles.analysisMetric}>
+                <Text style={styles.analysisMetricLabel}>Fantasy Value</Text>
+                <Text style={styles.analysisMetricValue}>{playerStats.aiAnalysis.fantasyValue}/10</Text>
+              </View>
+            </View>
+
+            {/* Key Insights */}
+            <View style={styles.keyInsightsContainer}>
+              <Text style={styles.keyInsightsTitle}>Key Insights:</Text>
+              {playerStats.aiAnalysis.keyInsights.map((insight, index) => (
+                <View key={index} style={styles.insightItem}>
+                  <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                  <Text style={styles.insightText}>{insight}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Recent Games */}
+      {playerStats?.recentGames && (
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>📈 Recent Games</Text>
+            <TouchableOpacity 
+              style={styles.viewAllButton}
+              onPress={() => handleNavigateToGameDetails()}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.viewAllText}>View All Games</Text>
+              <Ionicons name="chevron-forward" size={16} color="#0f766e" />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.performanceList}>
+            {playerStats.recentGames.map((game, index) => (
+              <TouchableOpacity 
+                key={index} 
+                style={styles.performanceItem}
+                onPress={() => handleGameClick(game)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.performanceHeader}>
+                  <View>
+                    <Text style={styles.performanceDate}>{game.date}</Text>
+                    <Text style={styles.performanceOpponent}>{game.opponent}</Text>
+                  </View>
+                  <View style={[
+                    styles.gameResult, 
+                    { backgroundColor: game.result === 'W' ? '#10b98120' : '#ef444420' }
+                  ]}>
+                    <Text style={[
+                      styles.gameResultText, 
+                      { color: game.result === 'W' ? '#10b981' : '#ef4444' }
+                    ]}>
+                      {game.result}
+                    </Text>
+                  </View>
+                </View>
+                
+                <View style={styles.performanceStats}>
+                  <View style={styles.statColumn}>
+                    <Text style={styles.statColumnLabel}>PTS</Text>
+                    <Text style={styles.statColumnValue}>{game.points}</Text>
+                  </View>
+                  <View style={styles.statColumn}>
+                    <Text style={styles.statColumnLabel}>REB</Text>
+                    <Text style={styles.statColumnValue}>{game.rebounds}</Text>
+                  </View>
+                  <View style={styles.statColumn}>
+                    <Text style={styles.statColumnLabel}>AST</Text>
+                    <Text style={styles.statColumnValue}>{game.assists}</Text>
+                  </View>
+                  <View style={styles.statColumn}>
+                    <Text style={styles.statColumnLabel}>+/-</Text>
+                    <Text style={[styles.statColumnValue, { color: game.result === 'W' ? '#10b981' : '#ef4444' }]}>
+                      {game.result === 'W' ? '+12' : '-5'}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Quick Actions - UPDATED with navigation functions */}
+      <View style={styles.sectionContainer}>
+        <Text style={styles.sectionTitle}>⚡ Quick Actions</Text>
+        <View style={styles.quickActionsGrid}>
+          <TouchableOpacity 
+            style={styles.quickAction}
+            onPress={() => handleNavigateToGameDetails()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="basketball" size={24} color="#3b82f6" />
+            <Text style={styles.quickActionText}>Games</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickAction}
+            onPress={() => handleNavigateToFantasy()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="trophy" size={24} color="#f59e0b" />
+            <Text style={styles.quickActionText}>Fantasy</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickAction}
+            onPress={() => handleNavigateToPredictions()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="trending-up" size={24} color="#ef4444" />
+            <Text style={styles.quickActionText}>AI Predict</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickAction}
+            onPress={() => handleNavigateToAnalytics()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="analytics" size={24} color="#10b981" />
+            <Text style={styles.quickActionText}>Analytics</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </>
+  );
+
+  if (loading && !playerStats) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#0f766e" />
+        <Text style={styles.loadingText}>Loading player profile...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {renderHeader()}
+      
+      {renderSearchBar()}
+      
+      {showSearchResults ? (
+        renderSearchResults()
+      ) : (
+        <ScrollView
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#0f766e']}
+              tintColor="#0f766e"
+            />
+          }
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {renderTabNavigation()}
+          {renderStatsContent()}
+          
+          <View style={styles.disclaimer}>
+            <Ionicons name="information-circle" size={14} color="#6b7280" />
+            <Text style={styles.disclaimerText}>
+              Data updates in real-time. AI predictions are for informational purposes only.
+            </Text>
+          </View>
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  headerContainer: {
+    backgroundColor: '#f8f9fa',
+  },
+  header: {
+    paddingTop: 50,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 20,
+  },
+  backButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 10,
+  },
+  headerActions: {
+    flexDirection: 'row',
+  },
+  headerButton: {
+    marginLeft: 8,
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 10,
+  },
+  playerInfo: {
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: 16,
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  avatarText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#0f766e',
+  },
+  playerNumber: {
+    position: 'absolute',
+    bottom: -8,
+    right: -8,
+    backgroundColor: '#ef4444',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  playerNumberText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  playerName: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  playerTeam: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.9)',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  playerDetails: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 12,
+    padding: 12,
+    width: '100%',
+    marginBottom: 16,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  detailText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+    marginLeft: 8,
+  },
+  // NEW: Navigation menu styles
+  navigationMenuContainer: {
+    marginTop: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+    padding: 8,
+    width: '100%',
+  },
+  
+  navigationMenu: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  
+  navButton: {
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  
+  navButtonText: {
+    color: 'white',
+    fontSize: 10,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  searchSection: {
+    backgroundColor: '#f8f9fa',
+  },
+  homeSearchBar: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  searchResultsInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  searchResultsText: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  clearSearchText: {
+    fontSize: 12,
+    color: '#0f766e',
+    fontWeight: '500',
+  },
+  searchResultsContainer: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  searchResultsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  searchResultsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  searchResultsList: {
+    paddingBottom: 20,
+  },
+  playerResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  playerResultInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  playerResultName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  playerResultDetails: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  playerResultStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  resultStatItem: {
+    alignItems: 'center',
+    marginRight: 16,
+    minWidth: 40,
+  },
+  resultStatLabel: {
+    fontSize: 11,
+    color: '#9ca3af',
+    marginBottom: 2,
+  },
+  resultStatValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  noResultsContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  noResultsText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginTop: 16,
+  },
+  noResultsSubtext: {
+    fontSize: 14,
+    color: '#9ca3af',
+    marginTop: 8,
+  },
+  scrollContent: {
+    paddingBottom: 30,
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#666',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'white',
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  tabButtonActive: {
+    backgroundColor: '#0f766e',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  tabTextActive: {
+    color: 'white',
+  },
+  aiPromptContainer: {
+    marginHorizontal: 16,
+    marginTop: 20,
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  aiPromptTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  aiPromptSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 16,
+  },
+  promptScroll: {
+    marginBottom: 16,
+  },
+  promptChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f9ff',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+  },
+  promptChipText: {
+    fontSize: 13,
+    color: '#0369a1',
+    marginLeft: 6,
+    maxWidth: 200,
+  },
+  customPromptContainer: {
+    marginTop: 8,
+  },
+  customPromptLabel: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  customPromptInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  promptIcon: {
+    marginRight: 8,
+  },
+  customPromptTextInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1f2937',
+    minHeight: 40,
+    maxHeight: 80,
+  },
+  submitButton: {
+    backgroundColor: '#0f766e',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  sectionContainer: {
+    marginHorizontal: 16,
+    marginTop: 20,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  viewAllText: {
+    fontSize: 14,
+    color: '#0f766e',
+    fontWeight: '600',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  statBox: {
+    width: '48%',
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  statValue: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#0f766e',
+    marginBottom: 6,
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 10,
+  },
+  statTrend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statTrendText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginLeft: 4,
+  },
+  additionalStats: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  additionalStat: {
+    width: '18%',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  additionalStatLabel: {
+    fontSize: 11,
+    color: '#9ca3af',
+    marginBottom: 6,
+  },
+  additionalStatValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  analysisCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  analysisHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  analysisTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginLeft: 10,
+    flex: 1,
+  },
+  confidenceBadge: {
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  confidenceText: {
+    fontSize: 12,
+    color: '#10b981',
+    fontWeight: '600',
+  },
+  analysisText: {
+    fontSize: 15,
+    color: '#4b5563',
+    lineHeight: 24,
+    marginBottom: 20,
+  },
+  analysisMetrics: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 24,
+  },
+  analysisMetric: {
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    padding: 16,
+    borderRadius: 12,
+    flex: 1,
+    marginHorizontal: 6,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  analysisMetricLabel: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 6,
+  },
+  analysisMetricValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#0f766e',
+  },
+  keyInsightsContainer: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  keyInsightsTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 12,
+  },
+  insightItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  insightText: {
+    fontSize: 14,
+    color: '#4b5563',
+    marginLeft: 10,
+    flex: 1,
+    lineHeight: 20,
+  },
+  performanceList: {
+    marginTop: 8,
+  },
+  performanceItem: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  performanceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  performanceDate: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  performanceOpponent: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  gameResult: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  gameResultText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  performanceStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  statColumn: {
+    alignItems: 'center',
+  },
+  statColumnLabel: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginBottom: 6,
+  },
+  statColumnValue: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  quickActionsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  quickAction: {
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 16,
+    width: '23%',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  quickActionText: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginTop: 10,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  disclaimer: {
+    flexDirection: 'row',
+    backgroundColor: '#f3f4f6',
+    marginHorizontal: 16,
+    marginTop: 20,
+    marginBottom: 30,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    alignItems: 'flex-start',
+  },
+  disclaimerText: {
+    fontSize: 13,
+    color: '#6b7280',
+    flex: 1,
+    marginLeft: 10,
+    lineHeight: 20,
+  },
+});

@@ -1,0 +1,201 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView,
+  SafeAreaView,
+  ActivityIndicator,
+  TouchableOpacity,
+  FlatList,
+} from 'react-native';
+import ApiService from '../services/ApiService'; // Fixed import
+
+console.log('HomeScreen-enhanced.js is loading...'); // Debug log
+
+export default function HomeScreen({ navigation }) {
+  const [connectionStatus, setConnectionStatus] = useState('Checking...');
+  const [games, setGames] = useState([]);
+  const [news, setNews] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    console.log('HomeScreen useEffect running');
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      console.log('Loading data...');
+      // Mock data since we're not sure about ApiService
+      setConnectionStatus('Connected to mock API');
+      setGames([
+        { id: 1, team1: 'Lakers', team2: 'Warriors', score: '102-98' },
+        { id: 2, team1: 'Celtics', team2: 'Heat', score: '89-85' },
+      ]);
+      setNews([
+        { id: 1, title: 'Trade News', summary: 'Teams making moves before deadline' },
+        { id: 2, title: 'Player Injury', summary: 'Star player out for 2 weeks' },
+      ]);
+    } catch (error) {
+      console.error('Error loading data:', error);
+      setConnectionStatus('Error: ' + error.message);
+    } finally {
+      setLoading(false);
+      console.log('Loading complete');
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ActivityIndicator size="large" color="#1e3a8a" />
+        <Text>Loading NBA Fantasy App...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  console.log('Rendering HomeScreen with data');
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView>
+        <View style={styles.header}>
+          <Text style={styles.title}>NBA Fantasy & Betting</Text>
+          <Text style={styles.subtitle}>Welcome back!</Text>
+        </View>
+        
+        <View style={styles.statusCard}>
+          <Text style={styles.statusText}>Status: {connectionStatus}</Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Live Games</Text>
+          {games.length > 0 ? (
+            <FlatList
+              data={games}
+              horizontal
+              renderItem={({ item }) => (
+                <View style={styles.gameCard}>
+                  <Text style={styles.gameTeams}>{item.team1} vs {item.team2}</Text>
+                  <Text style={styles.gameScore}>{item.score}</Text>
+                </View>
+              )}
+              keyExtractor={(item) => item.id.toString()}
+            />
+          ) : (
+            <Text>No live games available</Text>
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Latest News</Text>
+          {news.length > 0 ? (
+            <FlatList
+              data={news}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.newsCard}>
+                  <Text style={styles.newsTitle}>{item.title}</Text>
+                  <Text style={styles.newsSummary}>{item.summary}</Text>
+                </TouchableOpacity>
+              )}
+              keyExtractor={(item) => item.id.toString()}
+              scrollEnabled={false}
+            />
+          ) : (
+            <Text>No news available</Text>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  header: {
+    padding: 20,
+    backgroundColor: '#1e3a8a',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#d1d5db',
+    marginTop: 5,
+  },
+  statusCard: {
+    backgroundColor: 'white',
+    margin: 15,
+    padding: 15,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  statusText: {
+    fontSize: 16,
+    color: '#374151',
+  },
+  section: {
+    margin: 15,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    marginBottom: 10,
+  },
+  gameCard: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 10,
+    marginRight: 10,
+    minWidth: 150,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  gameTeams: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  gameScore: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    marginTop: 5,
+  },
+  newsCard: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  newsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    marginBottom: 5,
+  },
+  newsSummary: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+});

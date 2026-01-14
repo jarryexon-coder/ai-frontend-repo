@@ -1,0 +1,382 @@
+// src/hooks/useSportsData.js - UPDATED WITH ENVIRONMENT VARIABLES
+import { useState, useEffect, useCallback } from 'react';
+
+// Get API URL from environment variable or use default
+// In React Native, you can use react-native-config or hardcode for now
+// Since you're having dependency issues, let's use a config approach
+
+// API Configuration - Use environment variable if available
+const getApiBaseUrl = () => {
+  // For development, you can set this in different ways:
+  // 1. Using react-native-config (requires package installation)
+  // 2. Using a .env file with babel-plugin-transform-inline-environment-variables
+  // 3. Hardcoding for now and setting up properly later
+  
+  // Try to get from global variable (set by babel plugin if configured)
+  if (typeof process !== 'undefined' && process.env?.API_BASE_URL) {
+    return process.env.API_BASE_URL;
+  }
+  
+  // Try to get from global config
+  if (global.API_BASE_URL) {
+    return global.API_BASE_URL;
+  }
+  
+  // Default to localhost for development
+  return 'http://localhost:3001/api';
+};
+
+import Config from '../config';
+
+const API_CONFIG = {
+  baseURL: Config.API_BASE_URL || getApiBaseUrl(),
+  endpoints: {
+    nba: {
+      games: '/nba/games',
+      players: '/nba/players',
+      standings: '/nba/standings',
+    },
+    nfl: {
+      games: '/nfl/games',
+      standings: '/nfl/standings',
+      news: '/nfl/news',
+    },
+    nhl: {
+      games: '/nhl/games',
+      standings: '/nhl/standings',
+    },
+    mlb: {
+      games: '/mlb/games',
+      standings: '/mlb/standings',
+    },
+    news: '/news/latest',
+    picks: '/picks/daily',
+  }
+};
+
+console.log('🔧 API Base URL:', API_CONFIG.baseURL);
+
+// Mock data as fallback
+const mockNBA = {
+  games: [
+    {
+      id: '1',
+      homeTeam: { name: 'Lakers', score: 112, record: '25-15' },
+      awayTeam: { name: 'Celtics', score: 108, record: '28-12' },
+      status: 'final',
+      period: 'Final',
+      venue: 'Staples Center',
+      broadcast: 'ESPN'
+    },
+    {
+      id: '2',
+      homeTeam: { name: 'Warriors', score: 45, record: '22-18' },
+      awayTeam: { name: 'Bucks', score: 42, record: '30-10' },
+      status: 'live',
+      period: 'Q2',
+      timeRemaining: '5:42',
+      venue: 'Chase Center',
+      broadcast: 'TNT',
+      lastPlay: 'Curry makes 3-pointer'
+    },
+  ],
+  players: [
+    { id: 1, name: 'Stephen Curry', team: 'GSW', position: 'PG', points: 28.5, rebounds: 4.5, assists: 6.8 },
+    { id: 2, name: 'Giannis Antetokounmpo', team: 'MIL', position: 'PF', points: 31.2, rebounds: 11.8, assists: 5.7 },
+    { id: 3, name: 'Luka Doncic', team: 'DAL', position: 'PG', points: 34.2, rebounds: 8.9, assists: 9.5 }
+  ]
+};
+
+const mockNFL = {
+  games: [
+    {
+      id: '1',
+      homeTeam: { name: 'Chiefs', score: 31, record: '11-5' },
+      awayTeam: { name: 'Bills', score: 28, record: '10-6' },
+      status: 'final',
+      period: 'Final',
+      venue: 'Arrowhead Stadium',
+      broadcast: 'CBS'
+    }
+  ],
+  standings: [],
+  news: []
+};
+
+const mockNews = {
+  items: [
+    { id: 1, title: 'NBA Trade Deadline Approaching', description: 'Teams looking to make moves before the deadline.' },
+    { id: 2, title: 'Fantasy Basketball Waiver Wire', description: 'Top pickups for Week 15.' }
+  ]
+};
+
+// Helper function to fetch data with fallback
+const fetchWithFallback = async (endpoint, mockData, useMockData = false) => {
+  if (useMockData) {
+    console.log(`📡 Using mock data for ${endpoint}`);
+    return mockData;
+  }
+
+  try {
+    const url = `${API_CONFIG.baseURL}${endpoint}`;
+    console.log(`📡 Fetching from: ${url}`);
+    
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      timeout: 10000, // 10 second timeout
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log(`✅ Successfully fetched from ${endpoint}`);
+    return data;
+  } catch (error) {
+    console.warn(`⚠️ Failed to fetch from ${endpoint}, using mock data:`, error.message);
+    return mockData;
+  }
+};
+
+export const useSportsData = (options = {}) => {
+  const {
+    autoRefresh = true,
+    refreshInterval = 30000,
+    useMockData = false // Changed default to false to try real API first
+  } = options;
+
+  const [data, setData] = useState({
+    nba: {
+      games: [],
+      liveGames: [],
+      players: [],
+      isLoading: false,
+      error: null
+    },
+    nfl: {
+      games: [],
+      liveGames: [],
+      standings: [],
+      news: [],
+      isLoading: false,
+      error: null
+    },
+    nhl: {
+      games: [],
+      liveGames: [],
+      standings: [],
+      isLoading: false,
+      error: null
+    },
+    mlb: {
+      games: [],
+      liveGames: [],
+      standings: [],
+      isLoading: false,
+      error: null
+    },
+    news: {
+      items: [],
+      isLoading: false,
+      error: null
+    },
+    picks: {
+      items: [],
+      isLoading: false,
+      error: null
+    },
+    lastUpdated: null
+  });
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const loadNBAData = useCallback(async () => {
+    setData(prev => ({
+      ...prev,
+      nba: { ...prev.nba, isLoading: true, error: null }
+    }));
+
+    try {
+      console.log('🏀 Loading NBA data...');
+      
+      const [games, players] = await Promise.all([
+        fetchWithFallback(API_CONFIG.endpoints.nba.games, mockNBA.games, useMockData),
+        fetchWithFallback(API_CONFIG.endpoints.nba.players, mockNBA.players, useMockData)
+      ]);
+
+      // Process live games
+      const liveGames = Array.isArray(games) 
+        ? games.filter(game => game.status === 'live' || game.status === 'Live')
+        : [];
+
+      setData(prev => ({
+        ...prev,
+        nba: {
+          games: games || [],
+          liveGames: liveGames,
+          players: players || [],
+          isLoading: false,
+          error: null
+        },
+        lastUpdated: new Date()
+      }));
+      
+      console.log(`✅ NBA data loaded: ${games?.length || 0} games, ${liveGames.length} live games`);
+    } catch (err) {
+      console.error('❌ Failed to load NBA data:', err);
+      setData(prev => ({
+        ...prev,
+        nba: {
+          ...prev.nba,
+          isLoading: false,
+          error: err.message
+        }
+      }));
+    }
+  }, [useMockData]);
+
+  const loadNFLData = useCallback(async () => {
+    setData(prev => ({
+      ...prev,
+      nfl: { ...prev.nfl, isLoading: true, error: null }
+    }));
+
+    try {
+      console.log('🏈 Loading NFL data...');
+      
+      const [games, standings, news] = await Promise.all([
+        fetchWithFallback(API_CONFIG.endpoints.nfl.games, mockNFL.games, useMockData),
+        fetchWithFallback(API_CONFIG.endpoints.nfl.standings, mockNFL.standings, useMockData),
+        fetchWithFallback(API_CONFIG.endpoints.nfl.news, mockNFL.news, useMockData)
+      ]);
+
+      // Process live games
+      const liveGames = Array.isArray(games)
+        ? games.filter(game => game.status === 'live' || game.status === 'Live')
+        : [];
+
+      setData(prev => ({
+        ...prev,
+        nfl: {
+          games: games || [],
+          liveGames: liveGames,
+          standings: standings || [],
+          news: news || [],
+          isLoading: false,
+          error: null
+        },
+        lastUpdated: new Date()
+      }));
+      
+      console.log(`✅ NFL data loaded: ${games?.length || 0} games, ${liveGames.length} live games`);
+    } catch (err) {
+      console.error('❌ Failed to load NFL data:', err);
+      setData(prev => ({
+        ...prev,
+        nfl: {
+          ...prev.nfl,
+          isLoading: false,
+          error: err.message
+        }
+      }));
+    }
+  }, [useMockData]);
+
+  const loadNewsData = useCallback(async () => {
+    setData(prev => ({
+      ...prev,
+      news: { ...prev.news, isLoading: true, error: null }
+    }));
+
+    try {
+      console.log('📰 Loading news data...');
+      
+      const newsItems = await fetchWithFallback(
+        API_CONFIG.endpoints.news, 
+        mockNews.items, 
+        useMockData
+      );
+
+      setData(prev => ({
+        ...prev,
+        news: {
+          items: newsItems || [],
+          isLoading: false,
+          error: null
+        },
+        lastUpdated: new Date()
+      }));
+      
+      console.log(`✅ News data loaded: ${newsItems?.length || 0} items`);
+    } catch (err) {
+      console.error('❌ Failed to load news:', err);
+      setData(prev => ({
+        ...prev,
+        news: {
+          ...prev.news,
+          isLoading: false,
+          error: err.message
+        }
+      }));
+    }
+  }, [useMockData]);
+
+  // Load all data
+  const refreshAllData = useCallback(async () => {
+    console.log('🔄 Refreshing all sports data...');
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      await Promise.all([
+        loadNBAData(),
+        loadNFLData(),
+        loadNewsData()
+      ]);
+      console.log('✅ All data refreshed successfully');
+    } catch (err) {
+      console.error('❌ Error refreshing data:', err);
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadNBAData, loadNFLData, loadNewsData]);
+
+  // Initial load
+  useEffect(() => {
+    refreshAllData();
+  }, [refreshAllData]);
+
+  // Auto-refresh
+  useEffect(() => {
+    if (!autoRefresh) return;
+    
+    const interval = setInterval(() => {
+      console.log('🔄 Auto-refreshing data...');
+      refreshAllData();
+    }, refreshInterval);
+    
+    return () => clearInterval(interval);
+  }, [autoRefresh, refreshInterval, refreshAllData]);
+
+  return {
+    data,
+    refreshAllData,
+    refreshNBA: loadNBAData,
+    refreshNFL: loadNFLData,
+    refreshNews: loadNewsData,
+    isLoading,
+    error,
+    isNBALoading: data.nba.isLoading,
+    isNFLLoading: data.nfl.isLoading,
+    isNewsLoading: data.news.isLoading,
+    nbaError: data.nba.error,
+    nflError: data.nfl.error,
+    newsError: data.news.error
+  };
+};

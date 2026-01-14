@@ -1,0 +1,889 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  Switch, 
+  TouchableOpacity,
+  Platform,
+  Alert,
+  RefreshControl
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
+
+// NEW: Import navigation helper (same as GameDetailsScreen)
+import { useAppNavigation } from '../navigation/NavigationHelper';
+
+// NEW: Simplified analytics function
+const logAnalyticsEvent = async (eventName, eventParams = {}) => {
+  try {
+    const eventData = {
+      event: eventName,
+      params: eventParams,
+      timestamp: new Date().toISOString(),
+      platform: Platform.OS,
+    };
+
+    if (__DEV__) {
+      console.log(`📊 Analytics Event: ${eventName}`, eventParams);
+    }
+
+    if (Platform.OS === 'web' && !__DEV__ && typeof window !== 'undefined') {
+      try {
+        const firebaseApp = await import('firebase/app');
+        const firebaseAnalytics = await import('firebase/analytics');
+        
+        let app;
+        if (firebaseApp.getApps().length === 0) {
+          const firebaseConfig = {
+            apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyCi7YQ-vawFT3sIr1i8yuhhx-1vSplAneA",
+            authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "nba-fantasy-ai.firebaseapp.com",
+            projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "nba-fantasy-ai",
+            storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "nba-fantasy-ai.appspot.com",
+            messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "718718403866",
+            appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:718718403866:web:e26e10994d62799a048379",
+            measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-BLTPX9LJ7K"
+          };
+          
+          app = firebaseApp.initializeApp(firebaseConfig);
+        } else {
+          app = firebaseApp.getApp();
+        }
+        
+        const analytics = firebaseAnalytics.getAnalytics(app);
+        if (analytics) {
+          await firebaseAnalytics.logEvent(analytics, eventName, eventParams);
+        }
+      } catch (firebaseError) {
+        console.warn('Firebase analytics error:', firebaseError.message);
+      }
+    }
+    
+    try {
+      const existingEvents = JSON.parse(await AsyncStorage.getItem('analytics_events') || '[]');
+      existingEvents.push(eventData);
+      if (existingEvents.length > 100) {
+        existingEvents.splice(0, existingEvents.length - 100);
+      }
+      await AsyncStorage.setItem('analytics_events', JSON.stringify(existingEvents));
+    } catch (storageError) {
+      console.warn('Could not save analytics event locally:', storageError.message);
+    }
+  } catch (error) {
+    console.warn('Analytics event failed:', error.message);
+  }
+};
+
+export default function SettingsScreen() {
+  // NEW: Use the app navigation helper
+  const navigation = useAppNavigation();
+  
+  const [darkMode, setDarkMode] = useState(false);
+  const [gameNotifications, setGameNotifications] = useState(true);
+  const [autoRefreshScores, setAutoRefreshScores] = useState(true);
+  const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
+  const [weatherAlerts, setWeatherAlerts] = useState(true);
+  const [fantasyUpdates, setFantasyUpdates] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+
+  // NEW: Navigation helper functions
+  const handleNavigateToPlayerStats = () => {
+    navigation.goToPlayerStats();
+    logAnalyticsEvent('settings_navigate_player_stats', {
+      screen_name: 'Settings Screen'
+    });
+  };
+
+  const handleNavigateToAnalytics = () => {
+    navigation.goToAnalytics();
+    logAnalyticsEvent('settings_navigate_analytics', {
+      screen_name: 'Settings Screen'
+    });
+  };
+
+  const handleNavigateToPredictions = () => {
+    navigation.goToPredictions();
+    logAnalyticsEvent('settings_navigate_predictions', {
+      screen_name: 'Settings Screen'
+    });
+  };
+
+  const handleNavigateToFantasy = () => {
+    navigation.goToFantasy();
+    logAnalyticsEvent('settings_navigate_fantasy', {
+      screen_name: 'Settings Screen'
+    });
+  };
+
+  const handleNavigateToGameDetails = () => {
+    navigation.goToGameDetails();
+    logAnalyticsEvent('settings_navigate_game_details', {
+      screen_name: 'Settings Screen'
+    });
+  };
+
+  // NEW: Navigation menu component
+  const renderNavigationMenu = () => (
+    <View style={styles.navigationMenu}>
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToPlayerStats()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="stats-chart" size={20} color="#1e3a8a" />
+        <Text style={styles.navButtonText}>Player Stats</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToAnalytics()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="analytics" size={20} color="#1e3a8a" />
+        <Text style={styles.navButtonText}>Analytics</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToPredictions()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="trending-up" size={20} color="#1e3a8a" />
+        <Text style={styles.navButtonText}>AI Predict</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToFantasy()}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="trophy" size={20} color="#1e3a8a" />
+        <Text style={styles.navButtonText}>Fantasy</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Log screen view on mount
+  useEffect(() => {
+    logAnalyticsEvent('settings_screen_view', {
+      dark_mode: darkMode,
+      notifications_enabled: gameNotifications,
+      auto_refresh: autoRefreshScores,
+    });
+    
+    // Load saved settings
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const savedDarkMode = await AsyncStorage.getItem('darkMode');
+      const savedNotifications = await AsyncStorage.getItem('gameNotifications');
+      const savedAutoRefresh = await AsyncStorage.getItem('autoRefreshScores');
+      const savedAnalytics = await AsyncStorage.getItem('analyticsEnabled');
+      const savedWeatherAlerts = await AsyncStorage.getItem('weatherAlerts');
+      const savedFantasyUpdates = await AsyncStorage.getItem('fantasyUpdates');
+      
+      if (savedDarkMode !== null) setDarkMode(savedDarkMode === 'true');
+      if (savedNotifications !== null) setGameNotifications(savedNotifications === 'true');
+      if (savedAutoRefresh !== null) setAutoRefreshScores(savedAutoRefresh === 'true');
+      if (savedAnalytics !== null) setAnalyticsEnabled(savedAnalytics === 'true');
+      if (savedWeatherAlerts !== null) setWeatherAlerts(savedWeatherAlerts === 'true');
+      if (savedFantasyUpdates !== null) setFantasyUpdates(savedFantasyUpdates === 'true');
+    } catch (error) {
+      console.log('Error loading settings:', error);
+    }
+  };
+
+  const saveSettings = async () => {
+    try {
+      await AsyncStorage.setItem('darkMode', darkMode.toString());
+      await AsyncStorage.setItem('gameNotifications', gameNotifications.toString());
+      await AsyncStorage.setItem('autoRefreshScores', autoRefreshScores.toString());
+      await AsyncStorage.setItem('analyticsEnabled', analyticsEnabled.toString());
+      await AsyncStorage.setItem('weatherAlerts', weatherAlerts.toString());
+      await AsyncStorage.setItem('fantasyUpdates', fantasyUpdates.toString());
+      
+      logAnalyticsEvent('settings_saved', {
+        dark_mode: darkMode,
+        notifications_enabled: gameNotifications,
+        auto_refresh: autoRefreshScores,
+        analytics_enabled: analyticsEnabled,
+        weather_alerts: weatherAlerts,
+        fantasy_updates: fantasyUpdates,
+      });
+      
+      Alert.alert('Success', 'Settings saved successfully!');
+    } catch (error) {
+      console.log('Error saving settings:', error);
+      Alert.alert('Error', 'Failed to save settings');
+    }
+  };
+
+  const handleDarkModeToggle = async (value) => {
+    setDarkMode(value);
+    await logAnalyticsEvent('settings_dark_mode_toggle', {
+      enabled: value,
+    });
+  };
+
+  const handleNotificationsToggle = async (value) => {
+    setGameNotifications(value);
+    await logAnalyticsEvent('settings_notifications_toggle', {
+      enabled: value,
+    });
+  };
+
+  const handleAutoRefreshToggle = async (value) => {
+    setAutoRefreshScores(value);
+    await logAnalyticsEvent('settings_auto_refresh_toggle', {
+      enabled: value,
+    });
+  };
+
+  const handleAnalyticsToggle = async (value) => {
+    setAnalyticsEnabled(value);
+    await logAnalyticsEvent('settings_analytics_toggle', {
+      enabled: value,
+    });
+  };
+
+  const handleWeatherAlertsToggle = async (value) => {
+    setWeatherAlerts(value);
+    await logAnalyticsEvent('settings_weather_alerts_toggle', {
+      enabled: value,
+    });
+  };
+
+  const handleFantasyUpdatesToggle = async (value) => {
+    setFantasyUpdates(value);
+    await logAnalyticsEvent('settings_fantasy_updates_toggle', {
+      enabled: value,
+    });
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    
+    await logAnalyticsEvent('settings_refresh', {
+      action: 'manual_refresh',
+    });
+    
+    await loadSettings();
+    setLastUpdated(new Date());
+    setRefreshing(false);
+  };
+
+  const handleResetSettings = async () => {
+    Alert.alert(
+      'Reset Settings',
+      'Are you sure you want to reset all settings to default?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            setDarkMode(false);
+            setGameNotifications(true);
+            setAutoRefreshScores(true);
+            setAnalyticsEnabled(true);
+            setWeatherAlerts(true);
+            setFantasyUpdates(true);
+            
+            await logAnalyticsEvent('settings_reset', {
+              action: 'reset_to_default',
+            });
+            
+            Alert.alert('Reset Complete', 'All settings have been reset to default.');
+          }
+        }
+      ]
+    );
+  };
+
+  const handleExportSettings = async () => {
+    try {
+      const settings = {
+        darkMode,
+        gameNotifications,
+        autoRefreshScores,
+        analyticsEnabled,
+        weatherAlerts,
+        fantasyUpdates,
+        exportDate: new Date().toISOString(),
+        appVersion: 'NBA Fantasy App v1.0',
+        build: '2025.12.20'
+      };
+      
+      const settingsJson = JSON.stringify(settings, null, 2);
+      console.log('Settings exported:', settingsJson);
+      
+      Alert.alert(
+        'Settings Exported',
+        'Settings have been exported to console. In a real app, this would save to a file.',
+        [{ text: 'OK' }]
+      );
+      
+      await logAnalyticsEvent('settings_export', {
+        settings_count: Object.keys(settings).length,
+      });
+    } catch (error) {
+      console.log('Error exporting settings:', error);
+      Alert.alert('Error', 'Failed to export settings');
+    }
+  };
+
+  const handleClearCache = async () => {
+    Alert.alert(
+      'Clear Cache',
+      'This will clear all cached data. App data and settings will not be affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Get all keys except settings
+              const allKeys = await AsyncStorage.getAllKeys();
+              const cacheKeys = allKeys.filter(key => 
+                !key.includes('settings') && 
+                !key.includes('analytics_events') && 
+                !key.includes('search_history')
+              );
+              
+              await AsyncStorage.multiRemove(cacheKeys);
+              
+              await logAnalyticsEvent('settings_cache_cleared', {
+                items_cleared: cacheKeys.length,
+              });
+              
+              Alert.alert('Cache Cleared', 'All cached data has been cleared.');
+            } catch (error) {
+              console.log('Error clearing cache:', error);
+              Alert.alert('Error', 'Failed to clear cache');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  return (
+    <ScrollView 
+      style={styles.container}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={['#1e3a8a']}
+          tintColor="#1e3a8a"
+        />
+      }
+    >
+      {/* Header with Gradient */}
+      <LinearGradient
+        colors={['#1e3a8a', '#3b82f6']}
+        style={styles.header}
+      >
+        <View style={styles.headerTop}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.title}>⚙️ Settings</Text>
+            <Text style={styles.subtitle}>Customize your app experience</Text>
+          </View>
+          
+          <TouchableOpacity 
+            style={styles.saveButton}
+            onPress={saveSettings}
+          >
+            <Ionicons name="save" size={20} color="white" />
+          </TouchableOpacity>
+        </View>
+
+        {/* NEW: Navigation Menu */}
+        <View style={styles.navigationMenuContainer}>
+          {renderNavigationMenu()}
+        </View>
+
+        {/* Last Updated Indicator */}
+        <View style={styles.lastUpdatedRow}>
+          <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.8)" />
+          <Text style={styles.lastUpdatedText}>
+            Updated: {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </Text>
+        </View>
+      </LinearGradient>
+
+      {/* Navigation Quick Actions */}
+      <View style={styles.quickActionsSection}>
+        <Text style={styles.sectionTitle}>Quick Navigation</Text>
+        <View style={styles.quickActionsGrid}>
+          <TouchableOpacity 
+            style={styles.quickActionCard}
+            onPress={() => handleNavigateToPlayerStats()}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#3b82f620' }]}>
+              <Ionicons name="stats-chart" size={24} color="#3b82f6" />
+            </View>
+            <Text style={styles.quickActionText}>Player Stats</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionCard}
+            onPress={() => handleNavigateToAnalytics()}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#10b98120' }]}>
+              <Ionicons name="analytics" size={24} color="#10b981" />
+            </View>
+            <Text style={styles.quickActionText}>Analytics</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionCard}
+            onPress={() => handleNavigateToPredictions()}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#8b5cf620' }]}>
+              <Ionicons name="trending-up" size={24} color="#8b5cf6" />
+            </View>
+            <Text style={styles.quickActionText}>AI Predictions</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionCard}
+            onPress={() => handleNavigateToFantasy()}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#f59e0b20' }]}>
+              <Ionicons name="trophy" size={24} color="#f59e0b" />
+            </View>
+            <Text style={styles.quickActionText}>Fantasy</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* App Preferences Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>📱 App Preferences</Text>
+        
+        <View style={styles.settingItem}>
+          <View style={styles.settingInfo}>
+            <Ionicons name="moon" size={20} color="#6b7280" />
+            <View style={styles.settingTextContainer}>
+              <Text style={styles.settingLabel}>Dark Mode</Text>
+              <Text style={styles.settingDescription}>Use dark theme throughout the app</Text>
+            </View>
+          </View>
+          <Switch 
+            value={darkMode} 
+            onValueChange={handleDarkModeToggle}
+            trackColor={{ false: '#d1d5db', true: '#1e3a8a' }}
+            thumbColor={darkMode ? '#ffffff' : '#f4f4f5'}
+          />
+        </View>
+        
+        <View style={styles.settingItem}>
+          <View style={styles.settingInfo}>
+            <Ionicons name="notifications" size={20} color="#6b7280" />
+            <View style={styles.settingTextContainer}>
+              <Text style={styles.settingLabel}>Game Notifications</Text>
+              <Text style={styles.settingDescription}>Get alerts for game starts and scores</Text>
+            </View>
+          </View>
+          <Switch 
+            value={gameNotifications} 
+            onValueChange={handleNotificationsToggle}
+            trackColor={{ false: '#d1d5db', true: '#10b981' }}
+            thumbColor={gameNotifications ? '#ffffff' : '#f4f4f5'}
+          />
+        </View>
+        
+        <View style={styles.settingItem}>
+          <View style={styles.settingInfo}>
+            <Ionicons name="refresh" size={20} color="#6b7280" />
+            <View style={styles.settingTextContainer}>
+              <Text style={styles.settingLabel}>Auto-refresh Scores</Text>
+              <Text style={styles.settingDescription}>Automatically update game scores</Text>
+            </View>
+          </View>
+          <Switch 
+            value={autoRefreshScores} 
+            onValueChange={handleAutoRefreshToggle}
+            trackColor={{ false: '#d1d5db', true: '#3b82f6' }}
+            thumbColor={autoRefreshScores ? '#ffffff' : '#f4f4f5'}
+          />
+        </View>
+      </View>
+
+      {/* Data & Privacy Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>🔒 Data & Privacy</Text>
+        
+        <View style={styles.settingItem}>
+          <View style={styles.settingInfo}>
+            <Ionicons name="analytics" size={20} color="#6b7280" />
+            <View style={styles.settingTextContainer}>
+              <Text style={styles.settingLabel}>Analytics & Tracking</Text>
+              <Text style={styles.settingDescription}>Help improve app by sharing usage data</Text>
+            </View>
+          </View>
+          <Switch 
+            value={analyticsEnabled} 
+            onValueChange={handleAnalyticsToggle}
+            trackColor={{ false: '#d1d5db', true: '#8b5cf6' }}
+            thumbColor={analyticsEnabled ? '#ffffff' : '#f4f4f5'}
+          />
+        </View>
+        
+        <View style={styles.settingItem}>
+          <View style={styles.settingInfo}>
+            <Ionicons name="cloudy" size={20} color="#6b7280" />
+            <View style={styles.settingTextContainer}>
+              <Text style={styles.settingLabel}>Weather Alerts</Text>
+              <Text style={styles.settingDescription}>Get weather updates for game locations</Text>
+            </View>
+          </View>
+          <Switch 
+            value={weatherAlerts} 
+            onValueChange={handleWeatherAlertsToggle}
+            trackColor={{ false: '#d1d5db', true: '#0ea5e9' }}
+            thumbColor={weatherAlerts ? '#ffffff' : '#f4f4f5'}
+          />
+        </View>
+        
+        <View style={styles.settingItem}>
+          <View style={styles.settingInfo}>
+            <Ionicons name="trophy" size={20} color="#6b7280" />
+            <View style={styles.settingTextContainer}>
+              <Text style={styles.settingLabel}>Fantasy Updates</Text>
+              <Text style={styles.settingDescription}>Receive fantasy team updates</Text>
+            </View>
+          </View>
+          <Switch 
+            value={fantasyUpdates} 
+            onValueChange={handleFantasyUpdatesToggle}
+            trackColor={{ false: '#d1d5db', true: '#f59e0b' }}
+            thumbColor={fantasyUpdates ? '#ffffff' : '#f4f4f5'}
+          />
+        </View>
+      </View>
+
+      {/* App Management Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>🛠️ App Management</Text>
+        
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={handleClearCache}
+          activeOpacity={0.7}
+        >
+          <View style={styles.actionButtonContent}>
+            <Ionicons name="trash" size={20} color="#ef4444" />
+            <View style={styles.actionButtonTextContainer}>
+              <Text style={styles.actionButtonTitle}>Clear Cache</Text>
+              <Text style={styles.actionButtonDescription}>Remove temporary app data</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={handleExportSettings}
+          activeOpacity={0.7}
+        >
+          <View style={styles.actionButtonContent}>
+            <Ionicons name="download" size={20} color="#3b82f6" />
+            <View style={styles.actionButtonTextContainer}>
+              <Text style={styles.actionButtonTitle}>Export Settings</Text>
+              <Text style={styles.actionButtonDescription}>Save your current settings</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={handleResetSettings}
+          activeOpacity={0.7}
+        >
+          <View style={styles.actionButtonContent}>
+            <Ionicons name="refresh-circle" size={20} color="#f59e0b" />
+            <View style={styles.actionButtonTextContainer}>
+              <Text style={styles.actionButtonTitle}>Reset Settings</Text>
+              <Text style={styles.actionButtonDescription}>Restore all default settings</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+        </TouchableOpacity>
+      </View>
+
+      {/* About Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>ℹ️ About</Text>
+        
+        <View style={styles.aboutItem}>
+          <Ionicons name="phone-portrait" size={18} color="#6b7280" />
+          <Text style={styles.aboutText}>NBA Fantasy App v1.0</Text>
+        </View>
+        
+        <View style={styles.aboutItem}>
+          <Ionicons name="build" size={18} color="#6b7280" />
+          <Text style={styles.aboutText}>Build 2025.12.20</Text>
+        </View>
+        
+        <View style={styles.aboutItem}>
+          <Ionicons name="calendar" size={18} color="#6b7280" />
+          <Text style={styles.aboutText}>Last Updated: {lastUpdated.toLocaleDateString()}</Text>
+        </View>
+        
+        <View style={styles.aboutItem}>
+          <Ionicons name="code-slash" size={18} color="#6b7280" />
+          <Text style={styles.aboutText}>React Native • Expo • Firebase</Text>
+        </View>
+      </View>
+
+      {/* Footer */}
+      <View style={styles.footer}>
+        <Text style={styles.footerText}>
+          All settings are saved automatically. Pull down to refresh settings.
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitleContainer: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+    marginTop: 4,
+  },
+  saveButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Navigation Menu Styles
+  navigationMenuContainer: {
+    marginTop: 16,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+    padding: 8,
+  },
+  navigationMenu: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  navButton: {
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  navButtonText: {
+    color: 'white',
+    fontSize: 10,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  lastUpdatedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  lastUpdatedText: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.7)',
+    marginLeft: 4,
+  },
+  // Quick Actions
+  quickActionsSection: {
+    backgroundColor: 'white',
+    marginHorizontal: 16,
+    marginVertical: 16,
+    borderRadius: 15,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 15,
+  },
+  quickActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  quickActionCard: {
+    width: '48%',
+    backgroundColor: '#f8fafc',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  quickActionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  quickActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1f2937',
+    textAlign: 'center',
+  },
+  // Sections
+  section: {
+    backgroundColor: 'white',
+    marginHorizontal: 16,
+    marginVertical: 10,
+    borderRadius: 15,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  settingInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  settingTextContainer: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  settingLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1f2937',
+    marginBottom: 2,
+  },
+  settingDescription: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  // Action Buttons
+  actionButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  actionButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  actionButtonTextContainer: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  actionButtonTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1f2937',
+    marginBottom: 2,
+  },
+  actionButtonDescription: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  // About Items
+  aboutItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  aboutText: {
+    fontSize: 14,
+    color: '#4b5563',
+    marginLeft: 12,
+  },
+  // Footer
+  footer: {
+    padding: 20,
+    paddingBottom: 40,
+    alignItems: 'center',
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#6b7280',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+});

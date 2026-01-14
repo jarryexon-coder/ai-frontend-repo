@@ -1,0 +1,397 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Dimensions
+} from 'react-native';
+import { API_BASE_URL, ENDPOINTS } from '../config/api';
+import { LineChart, BarChart } from 'react-native-chart-kit';
+
+const screenWidth = Dimensions.get('window').width;
+
+export default function AnalyticsScreen() {
+  const [loading, setLoading] = useState(true);
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [timeRange, setTimeRange] = useState('7d');
+
+  useEffect(() => {
+    fetchAnalyticsData();
+  }, [timeRange]);
+
+  const fetchAnalyticsData = async () => {
+    try {
+      setLoading(true);
+      
+      // In a real app, you would fetch analytics from your backend
+      // For now, we'll generate sample analytics data
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      const sampleData = generateSampleAnalytics(timeRange);
+      setAnalyticsData(sampleData);
+      
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateSampleAnalytics = (range) => {
+    const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
+    
+    return {
+      userEngagement: {
+        labels: Array.from({length: days}, (_, i) => `Day ${i + 1}`),
+        data: Array.from({length: days}, () => Math.floor(Math.random() * 1000) + 500)
+      },
+      fantasyPerformance: {
+        labels: ['Top 10%', 'Top 25%', 'Top 50%', 'Bottom 50%'],
+        data: [85, 92, 78, 45]
+      },
+      bettingSuccess: {
+        labels: ['Value Bets', 'Player Props', 'Game Predictions'],
+        data: [68, 72, 59]
+      },
+      popularFeatures: [
+        { name: 'Fantasy Advice', usage: 95 },
+        { name: 'Live Scores', usage: 88 },
+        { name: 'Player Stats', usage: 76 },
+        { name: 'Betting Insights', usage: 82 }
+      ],
+      trends: [
+        { name: 'Stephen Curry', trend: '+15%', change: 'rising' },
+        { name: 'LeBron James', trend: '+8%', change: 'rising' },
+        { name: 'Luka Dončić', trend: '+22%', change: 'rising' },
+        { name: 'Giannis Antetokounmpo', trend: '+12%', change: 'rising' }
+      ]
+    };
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#1e3a8a" />
+        <Text style={styles.loadingText}>Loading analytics...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>📈 Analytics Dashboard</Text>
+        <Text style={styles.subtitle}>App performance & user insights</Text>
+      </View>
+
+      <View style={styles.timeRangeSelector}>
+        {['7d', '30d', '90d'].map(range => (
+          <TouchableOpacity
+            key={range}
+            style={[styles.rangeButton, timeRange === range && styles.activeRangeButton]}
+            onPress={() => setTimeRange(range)}
+          >
+            <Text style={[styles.rangeButtonText, timeRange === range && styles.activeRangeButtonText]}>
+              {range}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>👥 User Engagement</Text>
+        <LineChart
+          data={{
+            labels: analyticsData.userEngagement.labels,
+            datasets: [{
+              data: analyticsData.userEngagement.data
+            }]
+          }}
+          width={screenWidth - 40}
+          height={220}
+          chartConfig={{
+            backgroundColor: '#ffffff',
+            backgroundGradientFrom: '#f8fafc',
+            backgroundGradientTo: '#ffffff',
+            decimalPlaces: 0,
+            color: (opacity = 1) => `rgba(30, 58, 138, ${opacity})`,
+            labelColor: (opacity = 1) => `rgba(30, 41, 59, ${opacity})`,
+          }}
+          bezier
+          style={styles.chart}
+        />
+      </View>
+
+      <View style={styles.row}>
+        <View style={[styles.card, styles.halfCard]}>
+          <Text style={styles.cardTitle}>🏆 Fantasy Success Rate</Text>
+          <BarChart
+            data={{
+              labels: analyticsData.fantasyPerformance.labels,
+              datasets: [{
+                data: analyticsData.fantasyPerformance.data
+              }]
+            }}
+            width={(screenWidth - 60) / 2}
+            height={200}
+            chartConfig={{
+              backgroundColor: '#ffffff',
+              backgroundGradientFrom: '#dcfce7',
+              backgroundGradientTo: '#ffffff',
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(34, 197, 94, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(30, 41, 59, ${opacity})`,
+            }}
+            style={styles.chart}
+          />
+        </View>
+
+        <View style={[styles.card, styles.halfCard]}>
+          <Text style={styles.cardTitle}>🎯 Betting Accuracy</Text>
+          <BarChart
+            data={{
+              labels: analyticsData.bettingSuccess.labels,
+              datasets: [{
+                data: analyticsData.bettingSuccess.data
+              }]
+            }}
+            width={(screenWidth - 60) / 2}
+            height={200}
+            chartConfig={{
+              backgroundColor: '#ffffff',
+              backgroundGradientFrom: '#fef3c7',
+              backgroundGradientTo: '#ffffff',
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(245, 158, 11, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(30, 41, 59, ${opacity})`,
+            }}
+            style={styles.chart}
+          />
+        </View>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>⭐ Popular Features</Text>
+        {analyticsData.popularFeatures.map((feature, index) => (
+          <View key={index} style={styles.featureItem}>
+            <View style={styles.featureInfo}>
+              <Text style={styles.featureName}>{feature.name}</Text>
+              <Text style={styles.featureUsage}>{feature.usage}% usage</Text>
+            </View>
+            <View style={styles.usageBar}>
+              <View 
+                style={[styles.usageFill, { width: `${feature.usage}%` }]}
+              />
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>📊 Trending Players</Text>
+        {analyticsData.trends.map((player, index) => (
+          <View key={index} style={styles.trendItem}>
+            <View style={styles.trendInfo}>
+              <Text style={styles.trendName}>{player.name}</Text>
+              <Text style={[
+                styles.trendValue,
+                player.change === 'rising' ? styles.trendUp : styles.trendDown
+              ]}>
+                {player.trend} {player.change === 'rising' ? '📈' : '📉'}
+              </Text>
+            </View>
+            <Text style={styles.trendDescription}>
+              {player.change === 'rising' ? 'Increased user interest' : 'Decreased user interest'}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.insightsCard}>
+        <Text style={styles.insightsTitle}>💡 Key Insights</Text>
+        <View style={styles.insightItem}>
+          <Text style={styles.insightText}>• Fantasy advice has the highest engagement rate</Text>
+        </View>
+        <View style={styles.insightItem}>
+          <Text style={styles.insightText}>• User activity peaks during evening games</Text>
+        </View>
+        <View style={styles.insightItem}>
+          <Text style={styles.insightText}>• Betting insights show 65% average accuracy</Text>
+        </View>
+        <View style={styles.insightItem}>
+          <Text style={styles.insightText}>• Player prop bets are most popular feature</Text>
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#64748b',
+  },
+  header: {
+    padding: 20,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    marginBottom: 5,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#64748b',
+  },
+  timeRangeSelector: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginVertical: 15,
+  },
+  rangeButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 20,
+    marginHorizontal: 5,
+  },
+  activeRangeButton: {
+    backgroundColor: '#1e3a8a',
+  },
+  rangeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  activeRangeButtonText: {
+    color: 'white',
+  },
+  card: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  halfCard: {
+    flex: 1,
+    marginHorizontal: 5,
+  },
+  row: {
+    flexDirection: 'row',
+    marginHorizontal: 15,
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 15,
+  },
+  chart: {
+    borderRadius: 12,
+  },
+  featureItem: {
+    marginBottom: 15,
+  },
+  featureInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  featureName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1e293b',
+  },
+  featureUsage: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  usageBar: {
+    height: 8,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  usageFill: {
+    height: '100%',
+    backgroundColor: '#3b82f6',
+  },
+  trendItem: {
+    marginBottom: 15,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  trendInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  trendName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+  },
+  trendValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  trendUp: {
+    color: '#166534',
+  },
+  trendDown: {
+    color: '#dc2626',
+  },
+  trendDescription: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  insightsCard: {
+    backgroundColor: '#e0f2fe',
+    marginHorizontal: 20,
+    marginBottom: 30,
+    padding: 20,
+    borderRadius: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#0284c7',
+  },
+  insightsTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#0369a1',
+    marginBottom: 15,
+  },
+  insightItem: {
+    marginBottom: 10,
+  },
+  insightText: {
+    fontSize: 15,
+    color: '#0369a1',
+    lineHeight: 22,
+  },
+});

@@ -1,0 +1,272 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import ApiService from '../services/api-service';
+
+export default function HomeScreen({ navigation }) {
+  const [connectionStatus, setConnectionStatus] = useState('Checking...');
+  const [isOnline, setIsOnline] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    checkBackendConnection();
+  }, []);
+
+  const checkBackendConnection = async () => {
+    try {
+      // REPLACED: Using checkServerStatus instead of testConnection
+      const result = await ApiService.checkServerStatus();
+      
+      // Debug logging - FIXED: Using local isOnline state instead of ApiService property
+      console.log('🏠 HomeScreen connection result:', result);
+      console.log('🏠 HomeScreen online status:', isOnline);
+      
+      if (result.success) {
+        setConnectionStatus('✅ Backend Connected');
+        setIsOnline(true);
+      } else {
+        setConnectionStatus('❌ Connection Failed');
+        setIsOnline(false);
+      }
+    } catch (error) {
+      console.error('Connection test failed:', error);
+      setConnectionStatus('❌ Connection Error');
+      setIsOnline(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRetryConnection = () => {
+    setIsLoading(true);
+    checkBackendConnection();
+  };
+
+  const menuItems = [
+    { title: 'Betting Insights', screen: 'Betting', color: '#1e3a8a', description: 'Get betting odds and predictions' },
+    { title: 'Fantasy Advice', screen: 'Fantasy', color: '#059669', description: 'Fantasy basketball recommendations' },
+    { title: 'Player Stats', screen: 'Stats', color: '#dc2626', description: 'Player statistics and analytics' },
+    { title: 'Live Games', screen: 'Live', color: '#7c2d12', description: 'Live game updates and scores' },
+    { title: 'Settings', screen: 'Settings', color: '#4b5563', description: 'App settings and preferences' },
+  ];
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>🏀 NBA Fantasy AI Assistant</Text>
+        <Text style={styles.subtitle}>Your personal AI-powered basketball advisor</Text>
+      </View>
+
+      <View style={styles.statusCard}>
+        <Text style={styles.statusTitle}>System Status</Text>
+        <View style={styles.statusRow}>
+          <View style={[styles.statusDot, isOnline ? styles.online : styles.offline]} />
+          <Text style={styles.statusText}>{connectionStatus}</Text>
+        </View>
+        {!isOnline && (
+          <TouchableOpacity style={styles.retryButton} onPress={handleRetryConnection}>
+            <Text style={styles.retryButtonText}>🔄 Retry Connection</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <Text style={styles.sectionTitle}>Quick Access</Text>
+      
+      <View style={styles.menuGrid}>
+        {menuItems.map((item, index) => { const key = `item-${index}`; return (
+          <TouchableOpacity
+            key={`menu-${index}`}  // Added key prop here
+            style={[styles.menuCard, { backgroundColor: item.color }]}
+            onPress={() => navigation.navigate(item.screen)}
+          >
+            <Text style={styles.menuTitle}>{item.title}</Text>
+            <Text style={styles.menuDescription}>{item.description}</Text>
+            <Text style={styles.menuArrow}>→</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={styles.infoCard}>
+        <Text style={styles.infoTitle}>📊 Recent Updates</Text>
+        <Text style={styles.infoText}>• Backend API is {isOnline ? 'online' : 'offline'}</Text>
+        <Text style={styles.infoText}>• All features are available</Text>
+        <Text style={styles.infoText}>• Mock data fallback enabled</Text>
+        <Text style={styles.infoText}>• Real-time updates: {isOnline ? 'Active' : 'Paused'}</Text>
+      </View>
+
+      <View style={styles.tipsCard}>
+        <Text style={styles.tipsTitle}>💡 Tips</Text>
+        <Text style={styles.tipsText}>• Check "Fantasy Advice" for daily picks</Text>
+        <Text style={styles.tipsText}>• Use "Betting Insights" for odds</Text>
+        <Text style={styles.tipsText}>• Track live games in "Live Games"</Text>
+        <Text style={styles.tipsText}>• Visit "Settings" to customize</Text>
+      </View>
+
+      <TouchableOpacity 
+        style={styles.diagnosticsButton}
+        onPress={() => navigation.navigate('Diagnostics')}
+      >
+        <Text style={styles.diagnosticsButtonText}>🐛 Connection Diagnostics</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  header: {
+    backgroundColor: '#1e3a8a',
+    padding: 25,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 5,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#dbeafe',
+  },
+  statusCard: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 20,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  statusTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#1e40af',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  online: {
+    backgroundColor: '#10b981',
+  },
+  offline: {
+    backgroundColor: '#ef4444',
+  },
+  statusText: {
+    fontSize: 16,
+    color: '#4b5563',
+  },
+  retryButton: {
+    backgroundColor: '#f59e0b',
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginHorizontal: 20,
+    marginBottom: 15,
+    color: '#1e3a8a',
+  },
+  menuGrid: {
+    paddingHorizontal: 15,
+    marginBottom: 20,
+  },
+  menuCard: {
+    borderRadius: 10,
+    padding: 20,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  menuTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 5,
+  },
+  menuDescription: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginBottom: 10,
+  },
+  menuArrow: {
+    fontSize: 20,
+    color: 'white',
+    textAlign: 'right',
+  },
+  infoCard: {
+    backgroundColor: '#e0f2fe',
+    marginHorizontal: 20,
+    marginBottom: 15,
+    padding: 20,
+    borderRadius: 10,
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#0369a1',
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#4b5563',
+    marginBottom: 5,
+  },
+  tipsCard: {
+    backgroundColor: '#fef3c7',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 20,
+    borderRadius: 10,
+  },
+  tipsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#92400e',
+  },
+  tipsText: {
+    fontSize: 14,
+    color: '#78350f',
+    marginBottom: 5,
+  },
+  diagnosticsButton: {
+    backgroundColor: '#7c3aed',
+    marginHorizontal: 20,
+    marginBottom: 30,
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  diagnosticsButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+});

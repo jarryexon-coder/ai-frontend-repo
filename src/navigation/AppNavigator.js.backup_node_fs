@@ -1,0 +1,191 @@
+import React from 'react';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createStackNavigator } from '@react-navigation/stack';
+import { Text } from 'react-native';
+
+// Import screens with EXACT filenames from your structure
+import HomeScreen from '../screens/HomeScreen-Enhanced-v2';
+import SettingsScreen from '../screens/SettingsScreen';
+import NflAnalyticsScreen from '../screens/NFLScreen-enhanced';
+import NhlAnalyticsScreen from '../screens/NHLScreen-enhanced';
+import FantasyScreen from '../screens/FantasyScreen-enhanced-v2';
+import PlayerStatsScreen from '../screens/PlayerStatsScreen-enhanced';
+import BettingScreen from '../screens/BettingScreen-enhanced';
+import AnalyticsScreen from '../screens/AnalyticsScreen-enhanced';
+import LiveGamesScreen from '../screens/LiveGamesScreen-enhanced';
+import SportsNewsHubScreen from '../screens/SportsNewsHub-enhanced';
+import DailyPicksScreen from '../screens/DailyPicksScreen-enhanced';
+import PlayerProfileScreen from '../screens/PlayerProfileScreen';
+import GameDetailsScreen from '../screens/GameDetailsScreen';
+
+// Check if ParlayBuilder exists, create if missing
+let ParlayBuilderScreen;
+try {
+  ParlayBuilderScreen = require('../screens/ParlayBuilder/ParlayBuilderScreen').default;
+} catch {
+  // Create it if it doesn't exist
+  const fs = require('fs');
+  const path = require('path');
+  const parlaysDir = path.join(__dirname, '../screens/ParlayBuilder');
+  if (!fs.existsSync(parlaysDir)) {
+    fs.mkdirSync(parlaysDir, { recursive: true });
+  }
+  
+  const parlayContent = `import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+
+export default function ParlayBuilderScreen() {
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>🎯 Parlay Builder</Text>
+      <Text style={styles.subtitle}>Build custom bets here</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5'
+  },
+  title: { 
+    fontSize: 32, 
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    marginBottom: 10
+  },
+  subtitle: {
+    fontSize: 18,
+    color: '#666'
+  }
+});`;
+  
+  fs.writeFileSync(path.join(parlaysDir, 'ParlayBuilderScreen.js'), parlayContent);
+  ParlayBuilderScreen = require('../screens/ParlayBuilder/ParlayBuilderScreen').default;
+}
+
+const Tab = createBottomTabNavigator();
+const HomeStack = createStackNavigator();
+const PlayerStatsStack = createStackNavigator();
+const AnalyticsStack = createStackNavigator();
+
+// COMBO TAB 1: Home Stack (Home + NHL)
+function HomeStackScreen() {
+  return (
+    <HomeStack.Navigator>
+      <HomeStack.Screen 
+        name="HomeMain" 
+        component={HomeScreen}
+        options={{ headerShown: false }}
+      />
+      <HomeStack.Screen 
+        name="NHL" 
+        component={NhlAnalyticsScreen}
+        options={{ 
+          title: 'NHL Analytics',
+          headerStyle: { backgroundColor: '#1e3a8a' },
+          headerTintColor: '#fff',
+        }}
+      />
+      <HomeStack.Screen 
+        name="GameDetails" 
+        component={GameDetailsScreen}
+        options={{ 
+          title: 'Game Details',
+          headerStyle: { backgroundColor: '#1e3a8a' },
+          headerTintColor: '#fff',
+        }}
+      />
+    </HomeStack.Navigator>
+  );
+}
+
+// COMBO TAB 2: Player Stats Stack (Player Stats + Player Profile)
+function PlayerStatsStackScreen() {
+  return (
+    <PlayerStatsStack.Navigator>
+      <PlayerStatsStack.Screen 
+        name="PlayerStatsMain" 
+        component={PlayerStatsScreen}
+        options={{ headerShown: false }}
+      />
+      <PlayerStatsStack.Screen 
+        name="PlayerProfile" 
+        component={PlayerProfileScreen}
+        options={{ 
+          title: 'Player Profile',
+          headerStyle: { backgroundColor: '#1e3a8a' },
+          headerTintColor: '#fff',
+        }}
+      />
+    </PlayerStatsStack.Navigator>
+  );
+}
+
+// COMBO TAB 3: Analytics Stack (Analytics + Fantasy)
+function AnalyticsStackScreen() {
+  return (
+    <AnalyticsStack.Navigator>
+      <AnalyticsStack.Screen 
+        name="AnalyticsMain" 
+        component={AnalyticsScreen}
+        options={{ headerShown: false }}
+      />
+      <AnalyticsStack.Screen 
+        name="Fantasy" 
+        component={FantasyScreen}
+        options={{ 
+          title: 'Fantasy Advice',
+          headerStyle: { backgroundColor: '#1e3a8a' },
+          headerTintColor: '#fff',
+        }}
+      />
+    </AnalyticsStack.Navigator>
+  );
+}
+
+// MAIN NAVIGATOR - 8 TABS EXACTLY
+export default function AppNavigator() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ color, size }) => {
+          let icon = '•';
+          if (route.name === 'Home') icon = '🏠';        // COMBO: Home + NHL
+          if (route.name === 'Live Games') icon = '🏀';   // STANDALONE
+          if (route.name === 'Sports News') icon = '📰'; // STANDALONE
+          if (route.name === 'NFL') icon = '🏈';          // STANDALONE
+          if (route.name === 'Daily Picks') icon = '🎯';  // STANDALONE
+          if (route.name === 'Players') icon = '📊';      // COMBO: Player Stats + Profile
+          if (route.name === 'Parlay') icon = '💰';       // STANDALONE
+          if (route.name === 'Analytics') icon = '📈';    // COMBO: Analytics + Fantasy
+          return <Text style={{ fontSize: size, color }}>{icon}</Text>;
+        },
+        tabBarActiveTintColor: '#1e3a8a',
+        tabBarInactiveTintColor: 'gray',
+        tabBarStyle: {
+          backgroundColor: '#f8fafc',
+          borderTopWidth: 1,
+          borderTopColor: '#e2e8f0',
+          paddingBottom: 8,
+          paddingTop: 8,
+          height: 70, // Enough space for 8 tabs
+        },
+        headerShown: false,
+      })}
+      initialRouteName="Home"
+    >
+      {/* 8 TABS TOTAL */}
+      <Tab.Screen name="Home" component={HomeStackScreen} options={{ title: 'Home' }} />
+      <Tab.Screen name="Live Games" component={LiveGamesScreen} options={{ title: 'Live' }} />
+      <Tab.Screen name="Sports News" component={SportsNewsHubScreen} options={{ title: 'News' }} />
+      <Tab.Screen name="NFL" component={NflAnalyticsScreen} options={{ title: 'NFL' }} />
+      <Tab.Screen name="Daily Picks" component={DailyPicksScreen} options={{ title: 'Picks' }} />
+      <Tab.Screen name="Players" component={PlayerStatsStackScreen} options={{ title: 'Players' }} />
+      <Tab.Screen name="Parlay" component={ParlayBuilderScreen} options={{ title: 'Parlay' }} />
+      <Tab.Screen name="Analytics" component={AnalyticsStackScreen} options={{ title: 'Analytics' }} />
+    </Tab.Navigator>
+  );
+}

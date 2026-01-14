@@ -1,0 +1,102 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, Alert } from 'react-native';
+
+export default function PromoTestScreen() {
+  const [promos] = useState([
+    { id: 1, title: 'Welcome Bonus', description: 'Get 100% bonus', code: 'WELCOME100', color: '#1e3a8a' },
+    { id: 2, title: 'Free Bet', description: 'Get a free bet up to $50', code: 'FREEBET50', color: '#059669' },
+  ]);
+
+  const handlePromoPress = (promo) => {
+    Alert.alert(promo.title, `Code: ${promo.code}\n\n${promo.description}`);
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView>
+        <View style={styles.header}>
+          <Text style={styles.title}>Promotions</Text>
+          <Text style={styles.subtitle}>Exclusive deals and bonus codes</Text>
+        </View>
+
+        <View style={styles.promoList}>
+          {promos.map((promo) => (
+            <TouchableOpacity
+              key={promo.id}
+              style={[styles.promoCard, { backgroundColor: promo.color + '20' }]}
+              onPress={() => handlePromoPress(promo)}
+            >
+              <View style={styles.promoHeader}>
+                <Text style={[styles.promoTitle, { color: promo.color }]}>{promo.title}</Text>
+                <View style={[styles.codeBadge, { backgroundColor: promo.color }]}>
+                  <Text style={styles.codeText}>{promo.code}</Text>
+                </View>
+              </View>
+              <Text style={styles.promoDescription}>{promo.description}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  header: {
+    padding: 20,
+    backgroundColor: '#1e3a8a',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#d1d5db',
+    marginTop: 5,
+  },
+  promoList: {
+    padding: 15,
+  },
+  promoCard: {
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  promoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  promoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  codeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  codeText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  promoDescription: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 20,
+  },
+});

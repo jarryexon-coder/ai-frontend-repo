@@ -1,0 +1,402 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+
+// Mock data - fallback when API calls fail
+const mockFantasyAdvice = [
+  {
+    player: 'LeBron James',
+    recommendation: 'STRONG START',
+    reason: 'High usage rate expected against weak defense',
+    confidence: 85,
+  },
+  {
+    player: 'Stephen Curry',
+    recommendation: 'MUST START',
+    reason: 'Favorable matchup with high scoring potential',
+    confidence: 90,
+  },
+  {
+    player: 'Kevin Durant',
+    recommendation: 'SOLID PLAY',
+    reason: 'Consistent performer in away games',
+    confidence: 78,
+  },
+  {
+    player: 'Luka Dončić',
+    recommendation: 'HIGH RISK/HIGH REWARD',
+    reason: 'Coming off injury but dominant when healthy',
+    confidence: 65,
+  },
+  {
+    player: 'Giannis Antetokounmpo',
+    recommendation: 'ELITE PLAY',
+    reason: 'Facing team with poor interior defense',
+    confidence: 88,
+  },
+];
+
+const mockMyTeams = [
+  {
+    id: 1,
+    name: 'Dream Team',
+    points: 1245,
+    rank: 3,
+    players: ['LeBron James', 'Stephen Curry', 'Kevin Durant']
+  },
+  {
+    id: 2,
+    name: 'Ballers United',
+    points: 1180,
+    rank: 7,
+    players: ['Giannis Antetokounmpo', 'Luka Dončić', 'Jayson Tatum']
+  }
+];
+
+const FantasyScreen = () => {
+  const [fantasyAdvice, setFantasyAdvice] = useState([]);
+  const [myTeams, setMyTeams] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadFantasyData();
+  }, []);
+
+  const loadFantasyData = async () => {
+    setLoading(true);
+    setError(null);
+    console.log('🔄 FantasyScreen: Starting REAL API data load...');
+    
+    try {
+      // Load fantasy advice - REAL API CALL
+      console.log('📡 FantasyScreen: Calling getFantasyAdvice...');
+      const adviceResult = await ApiService.getFantasyAdvice();
+      console.log('📡 FantasyScreen: getFantasyAdvice result:', adviceResult);
+      
+      if (adviceResult.success && adviceResult.data) {
+        console.log('✅ FantasyScreen: Setting REAL fantasy advice data');
+        setFantasyAdvice(adviceResult.data);
+        setIsOnline(true);
+      } else {
+        console.log('🟡 FantasyScreen: API call failed, using mock data as fallback');
+        setFantasyAdvice(mockFantasyAdvice);
+        setIsOnline(false);
+      }
+
+      // Load my teams - REAL API CALL
+      console.log('📡 FantasyScreen: Calling getMyTeams...');
+      const teamsResult = await ApiService.getMyTeams();
+      console.log('📡 FantasyScreen: getMyTeams result:', teamsResult);
+      
+      if (teamsResult.success && teamsResult.data) {
+        console.log('✅ FantasyScreen: Setting REAL teams data');
+        setMyTeams(teamsResult.data);
+      } else {
+        console.log('🟡 FantasyScreen: No teams data from API');
+        setMyTeams([]);
+      }
+
+    } catch (error) {
+      console.error('❌ FantasyScreen: Error loading data:', error);
+      setError(error.message);
+      setFantasyAdvice(mockFantasyAdvice);
+      setMyTeams([]);
+      setIsOnline(false);
+    } finally {
+      console.log('✅ FantasyScreen: Data loading complete');
+      setLoading(false);
+    }
+  };
+
+  const refreshData = () => {
+    loadFantasyData();
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#059669" />
+        <Text style={styles.loadingText}>Loading fantasy data...</Text>
+        <Text style={styles.debugText}>
+          {isOnline ? 'Using real API data' : 'Using mock data - endpoints not available'}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>🏆 Fantasy Basketball</Text>
+        <Text style={styles.subtitle}>
+          {isOnline ? 'Live Data Mode' : 'Development Mode - Mock Data'}
+        </Text>
+        <TouchableOpacity onPress={refreshData} style={styles.refreshButton}>
+          <Text style={styles.refreshText}>🔄 Refresh</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Connection Status */}
+      {!isOnline && (
+        <View style={styles.connectionBanner}>
+          <Text style={styles.connectionText}>
+            ⚠️ {error ? `Connection Error: ${error}` : 'Backend endpoints not available. Using mock data.'}
+          </Text>
+        </View>
+      )}
+
+      {/* My Teams Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>My Fantasy Teams</Text>
+        {myTeams.map((team, index) => (
+          <View key={index} style={styles.teamCard}>
+            <Text style={styles.teamName}>{team.name}</Text>
+            <View style={styles.teamStats}>
+              <Text style={styles.teamPoints}>Points: {team.points}</Text>
+              <Text style={styles.teamRank}>Rank: #{team.rank}</Text>
+            </View>
+            <Text style={styles.teamPlayers}>
+              Key Players: {team.players.join(', ')}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Fantasy Advice Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>AI Fantasy Advice</Text>
+        {fantasyAdvice.map((advice, index) => (
+          <View key={index} style={styles.adviceCard}>
+            <View style={styles.adviceHeader}>
+              <Text style={styles.playerName}>{advice.player}</Text>
+              <View style={[styles.confidenceBadge, 
+                { backgroundColor: advice.confidence > 80 ? '#059669' : advice.confidence > 60 ? '#f59e0b' : '#dc2626' }
+              ]}>
+                <Text style={styles.confidenceText}>{advice.confidence}%</Text>
+              </View>
+            </View>
+            <Text style={styles.recommendation}>{advice.recommendation}</Text>
+            <Text style={styles.reason}>{advice.reason}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Quick Actions */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.actionButton}>
+            <Text style={styles.actionText}>Create Team</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton}>
+            <Text style={styles.actionText}>View League</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton}>
+            <Text style={styles.actionText}>Player Stats</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Development Info */}
+      <View style={styles.devCard}>
+        <Text style={styles.devTitle}>Development Info</Text>
+        <Text style={styles.devText}>• Backend endpoints: {isOnline ? 'Connected' : 'Not available'}</Text>
+        <Text style={styles.devText}>• Data source: {isOnline ? 'Real API' : 'Mock data'}</Text>
+        <Text style={styles.devText}>• Last updated: {new Date().toLocaleTimeString()}</Text>
+        <Text style={styles.devText}>• Status: {isOnline ? 'Online' : 'Offline'}</Text>
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#64748b',
+  },
+  debugText: {
+    marginTop: 5,
+    fontSize: 12,
+    color: '#9ca3af',
+    fontStyle: 'italic',
+  },
+  header: {
+    backgroundColor: '#059669',
+    padding: 20,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 5,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#d1fae5',
+    marginBottom: 10,
+  },
+  refreshButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  refreshText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  connectionBanner: {
+    backgroundColor: '#fef3c7',
+    padding: 10,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f59e0b',
+  },
+  connectionText: {
+    color: '#92400e',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  section: {
+    margin: 10,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#059669',
+    marginBottom: 15,
+    paddingLeft: 10,
+  },
+  teamCard: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  teamName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#059669',
+    marginBottom: 8,
+  },
+  teamStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  teamPoints: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  teamRank: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  teamPlayers: {
+    fontSize: 12,
+    color: '#9ca3af',
+    fontStyle: 'italic',
+  },
+  adviceCard: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  adviceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  playerName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  confidenceBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  confidenceText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  recommendation: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#059669',
+    marginBottom: 5,
+  },
+  reason: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  actionButton: {
+    backgroundColor: '#059669',
+    padding: 12,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 5,
+    alignItems: 'center',
+  },
+  actionText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  devCard: {
+    backgroundColor: '#f1f5f9',
+    margin: 10,
+    padding: 15,
+    borderRadius: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#64748b',
+  },
+  devTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#64748b',
+    marginBottom: 10,
+  },
+  devText: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 3,
+    fontFamily: 'monospace',
+  },
+});
+
+export default FantasyScreen;

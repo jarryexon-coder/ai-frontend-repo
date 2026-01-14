@@ -1,0 +1,143 @@
+// src/navigation/SimpleTabNavigator.js
+import React from 'react';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+
+// Import screens
+import HomeScreen from '../screens/HomeScreen-enhanced-v2';
+import LiveGamesScreen from '../screens/LiveGamesScreen-enhanced';
+import NFLScreen from '../screens/NFLScreen-enhanced';
+import SportsNewsHubScreen from '../screens/SportsNewsHub-enhanced';
+import DailyPicksScreen from '../screens/DailyPicksScreen-enhanced';
+import AnalyticsScreen from '../screens/AnalyticsScreen-enhanced';
+
+const Tab = createBottomTabNavigator();
+
+// Custom Tab Bar Button Component
+function CustomTabBarButton({ children, onPress }) {
+  return (
+    <TouchableOpacity
+      style={styles.customButton}
+      onPress={onPress}
+    >
+      <View style={styles.buttonContent}>
+        {children}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+export default function SimpleTabNavigator({ navigation, isPremium = false }) {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+          switch (route.name) {
+            case 'Home': iconName = focused ? 'home' : 'home-outline'; break;
+            case 'Live': iconName = focused ? 'play-circle' : 'play-circle-outline'; break;
+            case 'News': iconName = focused ? 'newspaper' : 'newspaper-outline'; break;
+            case 'Search': iconName = focused ? 'search' : 'search-outline'; break;
+            case 'NFL': iconName = focused ? 'american-football' : 'american-football-outline'; break;
+            case 'Picks': iconName = focused ? 'trophy' : 'trophy-outline'; break;
+            case 'Analytics': iconName = focused ? 'stats-chart' : 'stats-chart-outline'; break;
+            case 'Upgrade': iconName = focused ? 'star' : 'star-outline'; break;
+            default: iconName = 'help-circle';
+          }
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: '#ef4444',
+        tabBarInactiveTintColor: '#94a3b8',
+        tabBarStyle: {
+          backgroundColor: '#0f172a',
+          borderTopWidth: 1,
+          borderTopColor: '#334155',
+          paddingBottom: 8,
+          paddingTop: 8,
+          height: 60,
+        },
+        tabBarLabelStyle: { fontSize: 11, marginBottom: 4, fontWeight: '500' },
+        headerShown: false,
+      })}
+      initialRouteName="Home"
+    >
+      {/* Always Available Tabs */}
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Live" component={LiveGamesScreen} />
+      <Tab.Screen name="News" component={SportsNewsHubScreen} />
+      
+      {/* Search Tab with Custom Button */}
+      <Tab.Screen 
+        name="Search" 
+        component={View}
+        options={{ 
+          tabBarButton: (props) => (
+            <CustomTabBarButton
+              {...props}
+              onPress={() => navigation.navigate('Search')}
+            >
+              <Ionicons name="search" size={24} color="#007AFF" />
+              <Text style={styles.searchButtonText}>Search</Text>
+            </CustomTabBarButton>
+          ),
+        }} 
+      />
+      
+      {/* Conditional Tabs */}
+      {isPremium ? (
+        <>
+          <Tab.Screen name="NFL" component={NFLScreen} />
+          <Tab.Screen name="Picks" component={DailyPicksScreen} />
+          <Tab.Screen name="Analytics" component={AnalyticsScreen} />
+        </>
+      ) : (
+        <Tab.Screen 
+          name="Upgrade" 
+          component={View}
+          options={{ 
+            tabBarButton: (props) => (
+              <CustomTabBarButton
+                {...props}
+                onPress={() => navigation.navigate('PremiumAccess')}
+              >
+                <Ionicons name="star-outline" size={24} color="#ffd700" />
+                <Text style={styles.upgradeButtonText}>Upgrade</Text>
+              </CustomTabBarButton>
+            ),
+          }} 
+        />
+      )}
+    </Tab.Navigator>
+  );
+}
+
+const styles = StyleSheet.create({
+  customButton: {
+    top: -10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#1e293b',
+    borderWidth: 2,
+    borderColor: '#334155',
+  },
+  buttonContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchButtonText: {
+    color: '#007AFF',
+    fontSize: 10,
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  upgradeButtonText: {
+    color: '#ffd700',
+    fontSize: 10,
+    marginTop: 2,
+    fontWeight: '600',
+  },
+});

@@ -1,0 +1,475 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  FlatList,
+} from 'react-native';
+import ApiService from '../services/api-service';
+import { Ionicons } from '@expo/vector-icons'; // For icons
+
+export default function HomeScreen({ navigation }) {
+  const [connectionStatus, setConnectionStatus] = useState('Checking...');
+  const [isOnline, setIsOnline] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [featuredGames, setFeaturedGames] = useState([]);
+  const [topPick, setTopPick] = useState(null);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    setIsLoading(true);
+    try {
+      // 1. Test Connection
+      const healthResult = await ApiService.checkServerStatus();
+      if (healthResult?.success) {
+        setConnectionStatus('Connected ✅');
+        setIsOnline(true);
+      } else {
+        throw new Error('Health check failed');
+      }
+
+      // 2. Load featured games (today's games)
+      const gamesResult = await ApiService.getTodayGames();
+      setFeaturedGames(gamesResult?.data?.slice(0, 2) || []); // Show first 2 games
+
+      // 3. Load top fantasy pick
+      const adviceResult = await ApiService.getFantasyAdvice();
+      const mustStarts = adviceResult?.data?.must_starts || [];
+      setTopPick(mustStarts.length > 0 ? mustStarts[0] : null);
+
+    } catch (error) {
+      console.error('Dashboard data load failed:', error);
+      setConnectionStatus('Offline ⚠️');
+      setIsOnline(false);
+      // Set fallback data
+      setFeaturedGames([
+        {
+          id: 1,
+          home_team: 'Lakers',
+          away_team: 'Warriors',
+          time: '7:30 PM',
+          status: 'Upcoming',
+        },
+      ]);
+      setTopPick({
+        player: 'LeBron James',
+        reason: 'Consistent high performer',
+        projection: '52 fantasy points',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const renderGameItem = ({ item, index }) => (
+    <View key={`game-${item.id || index}`} style={styles.gameCard}>
+      <View style={styles.gameTeamsRow}>
+        <Text style={styles.teamText}>{item.home_team}</Text>
+        <Text style={styles.vsText}>vs</Text>
+        <Text style={styles.teamText}>{item.away_team}</Text>
+      </View>
+      <View style={styles.gameFooter}>
+        <Text style={styles.gameTime}>
+          <Ionicons name="time-outline" size={14} /> {item.time}
+        </Text>
+        <View style={[
+          styles.statusPill,
+          item.status === 'Live' && styles.livePill,
+          item.status === 'Final' && styles.finalPill,
+        ]}>
+          <Text style={styles.statusText}>{item.status}</Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  const quickActions = [
+    { title: 'Test Connection', screen: 'Test', icon: 'wifi', color: '#3b82f6' },
+    { title: 'Diagnostics', screen: 'Diagnostics', icon: 'bug', color: '#8b5cf6' },
+    { title: 'Promo Codes', screen: 'Promo', icon: 'gift', color: '#10b981' },
+  ];
+
+  const renderQuickAction = ({ item, index }) => (
+    <TouchableOpacity
+      key={`action-${index}`}
+      style={[styles.actionButton, { backgroundColor: item.color }]}
+      onPress={() => navigation.navigate(item.screen)}
+    >
+      <Ionicons name={item.icon} size={22} color="white" />
+      <Text style={styles.actionText}>{item.title}</Text>
+    </TouchableOpacity>
+  );
+
+  if (isLoading) {
+    return (
+      <View style={styles.centeredContainer}>
+        <ActivityIndicator size="large" color="#1e3a8a" />
+        <Text style={styles.loadingText}>Loading your dashboard...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.welcomeTitle}>Welcome back! 👋</Text>
+        <Text style={styles.subtitle}>Your NBA Fantasy & Betting Assistant</Text>
+      </View>
+
+      {/* Connection Status Card */}
+      <View style={styles.statusCard}>
+        <View style={styles.statusHeader}>
+          <Ionicons
+            name={isOnline ? 'cloud' : 'cloud-offline'}
+            size={24}
+            color={isOnline ? '#10b981' : '#f59e0b'}
+          />
+          <View style={styles.statusTexts}>
+            <Text style={styles.statusTitle}>
+              Backend is {isOnline ? 'online' : 'offline'}
+            </Text>
+            <Text style={styles.statusMessage}>{connectionStatus}</Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          onPress={loadDashboardData}
+          style={styles.refreshButton}
+          disabled={isLoading}
+        >
+          <Ionicons name="refresh" size={18} color="#3b82f6" />
+          <Text style={styles.refreshText}>
+            {isLoading ? 'Refreshing...' : 'Refresh Data'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Featured Games */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>
+            <Ionicons name="basketball" size={20} /> Today's Featured Games
+          </Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Live')}>
+            <Text style={styles.viewAllText}>View All →</Text>
+          </TouchableOpacity>
+        </View>
+        {featuredGames.length > 0 ? (
+          <FlatList
+            data={featuredGames}
+            renderItem={renderGameItem}
+            keyExtractor={(item, index) => `featured-game-${item.id || index}`}
+            scrollEnabled={false}
+          />
+        ) : (
+          <Text style={styles.placeholderText}>No games scheduled for today.</Text>
+        )}
+      </View>
+
+      {/* Top Fantasy Pick */}
+      {topPick && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            <Ionicons name="trending-up" size={20} /> Top Fantasy Pick
+          </Text>
+          <View style={styles.pickCard}>
+            <View style={styles.pickHeader}>
+              <Text style={styles.pickPlayer}>⭐ {topPick.player}</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Fantasy')}>
+                <Text style={styles.moreAdviceText}>More Advice →</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.pickReason}>{topPick.reason}</Text>
+            <Text style={styles.pickProjection}>
+              Projection: <Text style={styles.projectionHighlight}>{topPick.projection}</Text>
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Quick Actions */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>
+          <Ionicons name="flash" size={20} /> Quick Actions
+        </Text>
+        <FlatList
+          data={quickActions}
+          renderItem={renderQuickAction}
+          keyExtractor={(item, index) => `quick-action-${index}`}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.actionsList}
+        />
+      </View>
+
+      {/* Info Footer */}
+      <View style={styles.infoFooter}>
+        <Text style={styles.infoText}>
+          Use the tabs below to explore all features: Fantasy, Betting, Stats, and more.
+        </Text>
+        <Text style={styles.infoHint}>
+          💡 Your main navigation is at the bottom of the screen.
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  centeredContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#64748b',
+  },
+  header: {
+    paddingTop: 40,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: '#1e3a8a',
+  },
+  welcomeTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#dbeafe',
+  },
+  statusCard: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    marginTop: -15, // Overlap slightly
+    marginBottom: 20,
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusTexts: {
+    marginLeft: 12,
+  },
+  statusTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  statusMessage: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  refreshText: {
+    color: '#3b82f6',
+    fontWeight: '600',
+    fontSize: 14,
+    marginLeft: 6,
+  },
+  section: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e40af',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  viewAllText: {
+    color: '#3b82f6',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  gameCard: {
+    backgroundColor: '#f8fafc',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  gameTeamsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  teamText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    flex: 1,
+    textAlign: 'center',
+  },
+  vsText: {
+    fontSize: 14,
+    color: '#94a3b8',
+    fontWeight: 'bold',
+    marginHorizontal: 10,
+  },
+  gameFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  gameTime: {
+    fontSize: 14,
+    color: '#64748b',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusPill: {
+    backgroundColor: '#e0f2fe',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  livePill: {
+    backgroundColor: '#dcfce7',
+  },
+  finalPill: {
+    backgroundColor: '#f3f4f6',
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#4b5563',
+  },
+  pickCard: {
+    backgroundColor: '#f0f9ff',
+    padding: 18,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3b82f6',
+  },
+  pickHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  pickPlayer: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1e40af',
+  },
+  moreAdviceText: {
+    color: '#3b82f6',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  pickReason: {
+    fontSize: 15,
+    color: '#4b5563',
+    marginBottom: 10,
+    lineHeight: 22,
+  },
+  pickProjection: {
+    fontSize: 16,
+    color: '#374151',
+  },
+  projectionHighlight: {
+    fontWeight: 'bold',
+    color: '#10b981',
+  },
+  actionsList: {
+    paddingTop: 8,
+  },
+  actionButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 110,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  actionText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 13,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  placeholderText: {
+    textAlign: 'center',
+    color: '#94a3b8',
+    fontStyle: 'italic',
+    paddingVertical: 24,
+  },
+  infoFooter: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 40,
+  },
+  infoText: {
+    textAlign: 'center',
+    fontSize: 15,
+    color: '#64748b',
+    lineHeight: 22,
+    marginBottom: 12,
+  },
+  infoHint: {
+    textAlign: 'center',
+    fontSize: 14,
+    color: '#8b5cf6',
+    fontStyle: 'italic',
+    fontWeight: '500',
+  },
+});

@@ -1,0 +1,337 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform
+} from 'react-native';
+
+const PlayerStatsScreen = () => {
+  const [playerName, setPlayerName] = useState('');
+  const [playerData, setPlayerData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [recentSearches, setRecentSearches] = useState([]);
+
+  const popularPlayers = [
+    'LeBron James',
+    'Stephen Curry', 
+    'Kevin Durant',
+    'Giannis Antetokounmpo',
+    'Luka Doncic',
+    'Nikola Jokic'
+  ];
+
+  const searchPlayer = async (name = playerName) => {
+    if (!name.trim()) return;
+    
+    setLoading(true);
+    try {
+      // Mock API call
+      setTimeout(() => {
+        const mockPlayerStats = {
+          name: name,
+          team: name.includes('LeBron') ? 'Lakers' : 
+                name.includes('Curry') ? 'Warriors' :
+                name.includes('Durant') ? 'Suns' :
+                name.includes('Giannis') ? 'Bucks' :
+                name.includes('Luka') ? 'Mavericks' :
+                name.includes('Jokic') ? 'Nuggets' : 'Unknown',
+          position: 'F',
+          stats: {
+            points: 25.3,
+            rebounds: 7.8,
+            assists: 7.3,
+            steals: 1.2,
+            blocks: 0.8,
+            fgPercentage: 52.1,
+            threePointPercentage: 35.2
+          },
+          lastGame: {
+            points: 28,
+            rebounds: 9,
+            assists: 8,
+            result: 'Win'
+          }
+        };
+        
+        setPlayerData(mockPlayerStats);
+        
+        // Add to recent searches
+        if (!recentSearches.includes(name)) {
+          setRecentSearches(prev => [name, ...prev.slice(0, 4)]);
+        }
+        
+        setLoading(false);
+      }, 1500);
+    } catch (error) {
+      console.error('Error fetching player stats:', error);
+      setLoading(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <Text style={styles.title}>Player Statistics</Text>
+        
+        {/* Search Section */}
+        <View style={styles.searchSection}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search for a player..."
+            value={playerName}
+            onChangeText={setPlayerName}
+            onSubmitEditing={() => searchPlayer()}
+          />
+          <TouchableOpacity 
+            style={styles.searchButton}
+            onPress={() => searchPlayer()}
+            disabled={loading}
+          >
+            <Text style={styles.searchButtonText}>
+              {loading ? 'Searching...' : 'Search'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Popular Players */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Popular Players</Text>
+          <View style={styles.popularPlayers}>
+            {popularPlayers.map((player, index) => { const key = `player-${index}`; return (
+              <TouchableOpacity
+                key={index}
+                style={styles.playerChip}
+                onPress={() => {
+                  setPlayerName(player);
+                  searchPlayer(player);
+                }}
+              >
+                <Text style={styles.playerChipText}>{player}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Player Stats */}
+        {loading && (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color="#007AFF" />
+            <Text>Loading player data...</Text>
+          </View>
+        )}
+
+        {playerData && !loading && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Player Stats</Text>
+            <View style={styles.playerCard}>
+              <View style={styles.playerHeader}>
+                <Text style={styles.playerName}>{playerData.name}</Text>
+                <Text style={styles.playerInfo}>
+                  {playerData.team} • {playerData.position}
+                </Text>
+              </View>
+              
+              <View style={styles.statsGrid}>
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>{playerData.stats.points}</Text>
+                  <Text style={styles.statLabel}>PPG</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>{playerData.stats.rebounds}</Text>
+                  <Text style={styles.statLabel}>RPG</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>{playerData.stats.assists}</Text>
+                  <Text style={styles.statLabel}>APG</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>{playerData.stats.steals}</Text>
+                  <Text style={styles.statLabel}>SPG</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>{playerData.stats.blocks}</Text>
+                  <Text style={styles.statLabel}>BPG</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>{playerData.stats.fgPercentage}%</Text>
+                  <Text style={styles.statLabel}>FG%</Text>
+                </View>
+              </View>
+
+              <View style={styles.lastGame}>
+                <Text style={styles.lastGameTitle}>Last Game</Text>
+                <View style={styles.lastGameStats}>
+                  <Text style={styles.lastGameStat}>
+                    {playerData.lastGame.points} PTS
+                  </Text>
+                  <Text style={styles.lastGameStat}>
+                    {playerData.lastGame.rebounds} REB
+                  </Text>
+                  <Text style={styles.lastGameStat}>
+                    {playerData.lastGame.assists} AST
+                  </Text>
+                  <Text style={styles.lastGameResult}>
+                    {playerData.lastGame.result}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: '#f8fafc',
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
+  center: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#1e293b',
+  },
+  searchSection: {
+    flexDirection: 'row',
+    marginBottom: 20,
+  },
+  searchInput: {
+    flex: 1,
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 8,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  searchButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    justifyContent: 'center',
+  },
+  searchButtonText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  section: {
+    marginBottom: 25,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    color: '#334155',
+  },
+  popularPlayers: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  playerChip: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  playerChipText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  playerCard: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  playerHeader: {
+    marginBottom: 16,
+  },
+  playerName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  playerInfo: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  statItem: {
+    width: '30%',
+    alignItems: 'center',
+    marginBottom: 12,
+    padding: 8,
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  lastGame: {
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingTop: 16,
+  },
+  lastGameTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#334155',
+  },
+  lastGameStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  lastGameStat: {
+    fontSize: 14,
+    color: '#475569',
+  },
+  lastGameResult: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#059669',
+  },
+});
+
+export default PlayerStatsScreen;

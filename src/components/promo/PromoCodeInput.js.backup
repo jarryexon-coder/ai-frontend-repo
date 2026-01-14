@@ -1,0 +1,120 @@
+import React, { useState } from 'react';
+import { View, TextInput, Button, Text, StyleSheet } from 'react-native';
+import { API_BASE_URL } from '../../config/api';
+
+export default function PromoCodeInput({ onApply }) {
+  const [code, setCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [valid, setValid] = useState(false);
+
+  const handleApply = async () => {
+    if (!code.trim()) {
+      setMessage('Please enter a promo code');
+      return;
+    }
+
+    setLoading(true);
+    setMessage('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/promo/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: code.toUpperCase() })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setMessage(`✅ ${data.message || 'Promo code applied!'}`);
+        setValid(true);
+        if (onApply) {
+          onApply(data.promoCode);
+        }
+      } else {
+        setMessage(`❌ ${data.error || 'Invalid promo code'}`);
+        setValid(false);
+      }
+    } catch (error) {
+      setMessage('❌ Network error. Please try again.');
+      setValid(false);
+    }
+    
+    setLoading(false);
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.label}>Have a promo code?</Text>
+      <View style={styles.inputContainer}>
+        <TextInput
+          placeholder="Enter promo code"
+          value={code}
+          onChangeText={setCode}
+          style={[styles.input, valid && styles.validInput]}
+          editable={!loading}
+          autoCapitalize="characters"
+        />
+        <Button 
+          title={loading ? "Checking..." : "Apply"} 
+          onPress={handleApply} 
+          disabled={loading || !code.trim()}
+          color="#007AFF"
+        />
+      </View>
+      {message ? (
+        <Text style={[styles.message, valid ? styles.successMessage : styles.errorMessage]}>
+          {message}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    marginVertical: 16,
+    padding: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+    color: '#212529',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ced4da',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginRight: 12,
+    backgroundColor: 'white',
+    fontSize: 16,
+  },
+  validInput: {
+    borderColor: '#28a745',
+    backgroundColor: '#f8fff9',
+  },
+  message: {
+    marginTop: 8,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  successMessage: {
+    color: '#28a745',
+  },
+  errorMessage: {
+    color: '#dc3545',
+  },
+});

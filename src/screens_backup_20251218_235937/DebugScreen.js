@@ -1,0 +1,332 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Button, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import ApiService from '../services/ApiService';
+
+const DebugScreen = () => {
+  const [connectionStatus, setConnectionStatus] = useState('Not tested');
+  const [apiUrl, setApiUrl] = useState('');
+  const [responseData, setResponseData] = useState(null);
+  const [error, setError] = useState(null);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testHistory, setTestHistory] = useState([]);
+
+  useEffect(() => {
+    // Log the environment variable
+    console.log('🔧 Environment API URL:', process.env.REACT_APP_API_BASE_URL);
+    setApiUrl(process.env.REACT_APP_API_BASE_URL || 'Not set');
+    
+    // Load test history from storage
+    loadTestHistory();
+  }, []);
+
+  const loadTestHistory = async () => {
+    // You could load previous test results from AsyncStorage here
+  };
+
+  const testConnection = async () => {
+    try {
+      setConnectionStatus('Testing...');
+      setIsTesting(true);
+      setError(null);
+      
+      console.log('🧪 Testing connection to:', process.env.REACT_APP_API_BASE_URL);
+      
+      // CHANGED: Use ApiService instead of nbaService
+      const result = await ApiService.testConnection();
+      setConnectionStatus('✅ Connected successfully!');
+      setResponseData(result);
+      
+      // Add to test history
+      const newTest = {
+        timestamp: new Date().toLocaleTimeString(),
+        status: 'success',
+        data: result
+      };
+      setTestHistory(prev => [newTest, ...prev.slice(0, 4)]); // Keep last 5 tests
+      
+    } catch (err) {
+      setConnectionStatus('❌ Connection failed');
+      setError(err.message);
+      console.error('Connection test error:', err);
+      
+      // Add failed test to history
+      const newTest = {
+        timestamp: new Date().toLocaleTimeString(),
+        status: 'failed',
+        error: err.message
+      };
+      setTestHistory(prev => [newTest, ...prev.slice(0, 4)]);
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const testMultipleEndpoints = async () => {
+    // CHANGED: Updated to use ApiService methods that match your FantasyScreen
+    const endpoints = [
+      { name: 'Health Check', method: ApiService.testConnection },
+      { name: 'Fantasy Advice', method: ApiService.getFantasyAdvice },
+      { name: 'My Teams', method: ApiService.getMyTeams }
+    ];
+
+    const results = [];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const result = await endpoint.method();
+        results.push({
+          name: endpoint.name,
+          status: '✅ Success',
+          data: result
+        });
+      } catch (err) {
+        results.push({
+          name: endpoint.name,
+          status: '❌ Failed',
+          error: err.message
+        });
+      }
+    }
+    
+    setResponseData({ multipleTests: results });
+  };
+
+  return (
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>🔧 Debug Connection</Text>
+      
+      <View style={styles.infoCard}>
+        <Text style={styles.label}>API URL from environment:</Text>
+        <Text style={styles.value}>{apiUrl}</Text>
+      </View>
+
+      <View style={styles.infoCard}>
+        <Text style={styles.label}>Connection Status:</Text>
+        <Text style={[
+          styles.value, 
+          connectionStatus.includes('✅') ? styles.success : 
+          connectionStatus.includes('❌') ? styles.error : styles.neutral
+        ]}>
+          {connectionStatus}
+          {isTesting && ' 🔄'}
+        </Text>
+      </View>
+
+      <View style={styles.buttonRow}>
+        <TouchableOpacity 
+          style={[styles.button, isTesting && styles.buttonDisabled]} 
+          onPress={testConnection}
+          disabled={isTesting}
+        >
+          {isTesting ? (
+            <ActivityIndicator size="small" color="white" />
+          ) : (
+            <Text style={styles.buttonText}>Test Basic Connection</Text>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.buttonSecondary} 
+          onPress={testMultipleEndpoints}
+        >
+          <Text style={styles.buttonText}>Test All Endpoints</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Test History */}
+      {testHistory.length > 0 && (
+        <View style={styles.historyCard}>
+          <Text style={styles.historyTitle}>Recent Tests:</Text>
+          {testHistory.map((test, index) => (
+            <View key={index} style={styles.historyItem}>
+              <Text style={styles.historyTime}>{test.timestamp}</Text>
+              <Text style={test.status === 'success' ? styles.historySuccess : styles.historyError}>
+                {test.status === 'success' ? '✅ Success' : '❌ Failed'}
+              </Text>
+            </View>
+          )));;
+        </View>
+      )}
+
+      {responseData && (
+        <View style={styles.responseCard}>
+          <Text style={styles.label}>Response Data:</Text>
+          <Text style={styles.value}>{JSON.stringify(responseData, null, 2)}</Text>
+        </View>
+      )}
+
+      {error && (
+        <View style={styles.errorCard}>
+          <Text style={styles.label}>Error Details:</Text>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+
+      <View style={styles.instructions}>
+        <Text style={styles.instructionsTitle}>Troubleshooting Steps:</Text>
+        <Text style={styles.instruction}>1. Make sure backend is running on port 3000</Text>
+        <Text style={styles.instruction}>2. Make sure ngrok is running</Text>
+        <Text style={styles.instruction}>3. Check that API_URL in .env matches ngrok URL</Text>
+        <Text style={styles.instruction}>4. Restart frontend after changing .env</Text>
+        <Text style={styles.instruction}>5. Check console logs for detailed errors</Text>
+      </View>
+    </ScrollView>
+  );
+};
+
+// Styles remain the same as in the enhanced version...
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: '#f8fafc',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#1e293b',
+  },
+  infoCard: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3b82f6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  responseCard: {
+    backgroundColor: '#f0f9ff',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#10b981',
+  },
+  errorCard: {
+    backgroundColor: '#fef2f2',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#ef4444',
+  },
+  historyCard: {
+    backgroundColor: '#f8fafc',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#8b5cf6',
+  },
+  historyTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  historyTime: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  historySuccess: {
+    fontSize: 12,
+    color: '#10b981',
+    fontWeight: '600',
+  },
+  historyError: {
+    fontSize: 12,
+    color: '#ef4444',
+    fontWeight: '600',
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  value: {
+    fontSize: 16,
+    color: '#1f2937',
+    fontFamily: 'monospace',
+  },
+  success: {
+    color: '#10b981',
+    fontWeight: 'bold',
+  },
+  error: {
+    color: '#ef4444',
+    fontWeight: 'bold',
+  },
+  neutral: {
+    color: '#6b7280',
+    fontWeight: 'bold',
+  },
+  errorText: {
+    color: '#dc2626',
+    fontSize: 14,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginVertical: 16,
+    gap: 10,
+  },
+  button: {
+    flex: 1,
+    backgroundColor: '#3b82f6',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonSecondary: {
+    flex: 1,
+    backgroundColor: '#8b5cf6',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  instructions: {
+    marginTop: 20,
+    padding: 16,
+    backgroundColor: '#fffbeb',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#f59e0b',
+  },
+  instructionsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#92400e',
+    marginBottom: 8,
+  },
+  instruction: {
+    fontSize: 14,
+    color: '#92400e',
+    marginBottom: 4,
+  },
+});
+
+export default DebugScreen;

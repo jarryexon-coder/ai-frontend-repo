@@ -1,0 +1,209 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
+import axios from 'axios';
+
+const ConnectionDiagnostics = () => {
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const testURLs = [
+    { name: 'Localhost:3000', url: 'http://localhost:3000/health' },
+    { name: '127.0.0.1:3000', url: 'http://127.0.0.1:3000/health' },
+    { name: '10.0.0.183:3000', url: 'http://10.0.0.183:3000/health' },
+    { name: 'Localhost NBA Games', url: 'http://localhost:3000/api/nba/games/today' },
+    { name: '10.0.0.183 NBA Games', url: 'http://10.0.0.183:3000/api/nba/games/today' },
+  ];
+
+  const runTests = async () => {
+    setLoading(true);
+    setResults([]);
+
+    for (const test of testURLs) {
+      try {
+        const startTime = Date.now();
+        const response = await axios.get(test.url, { timeout: 5000 });
+        const endTime = Date.now();
+        const latency = endTime - startTime;
+
+        setResults(prev => [...prev, {
+          name: test.name,
+          url: test.url,
+          status: '✅ Success',
+          latency: `${latency}ms`,
+          details: `Status: ${response.status}`,
+        }]);
+      } catch (error) {
+        setResults(prev => [...prev, {
+          name: test.name,
+          url: test.url,
+          status: '❌ Failed',
+          latency: 'N/A',
+          details: error.message,
+        }]);
+      }
+    }
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    runTests();
+  }, []);
+
+  return (
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>🔧 Connection Diagnostics</Text>
+      <Text style={styles.subtitle}>Platform: {Platform.OS}</Text>
+      
+      <TouchableOpacity style={styles.button} onPress={runTests}>
+        <Text style={styles.buttonText}>🔄 Run Tests Again</Text>
+      </TouchableOpacity>
+
+      {loading ? (
+        <Text style={styles.loading}>Running tests...</Text>
+      ) : (
+        <View style={styles.results}>
+          {results.map((result, index) => (
+            <View key={index} style={styles.resultCard}>
+              <View style={styles.resultHeader}>
+                <Text style={styles.resultName}>{result.name}</Text>
+                <Text style={[
+                  styles.resultStatus,
+                  result.status.includes('✅') ? styles.success : styles.error
+                ]}>
+                  {result.status}
+                </Text>
+              </View>
+              <Text style={styles.resultUrl}>URL: {result.url}</Text>
+              <Text style={styles.resultDetails}>Latency: {result.latency}</Text>
+              <Text style={styles.resultDetails}>{result.details}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <View style={styles.infoBox}>
+        <Text style={styles.infoTitle}>📝 Connection Tips for iOS Simulator:</Text>
+        <Text>• Use 'localhost' if backend runs on same Mac</Text>
+        <Text>• Use '10.0.2.2' for Android emulator</Text>
+        <Text>• Check that backend is running: curl http://localhost:3000/health</Text>
+        <Text>• Make sure no firewall is blocking port 3000</Text>
+        <Text>• Try restarting both backend and Expo</Text>
+      </View>
+
+      <View style={styles.commandsBox}>
+        <Text style={styles.commandsTitle}>💻 Useful Commands:</Text>
+        <Text>1. Check backend: curl http://localhost:3000/health</Text>
+        <Text>2. Restart backend: cd ~/nba-backend && node server.js</Text>
+        <Text>3. Clear Expo cache: npx expo start --clear</Text>
+        <Text>4. Check ports: lsof -i :3000</Text>
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    padding: 20,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#1e3a8a',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 20,
+  },
+  button: {
+    backgroundColor: '#1e3a8a',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  loading: {
+    fontSize: 18,
+    textAlign: 'center',
+    marginVertical: 20,
+    color: '#666',
+  },
+  results: {
+    marginBottom: 20,
+  },
+  resultCard: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 10,
+    borderLeftWidth: 5,
+    borderLeftColor: '#ddd',
+  },
+  resultHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  resultName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  resultStatus: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  success: {
+    color: '#10b981',
+  },
+  error: {
+    color: '#ef4444',
+  },
+  resultUrl: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 5,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  resultDetails: {
+    fontSize: 14,
+    color: '#4b5563',
+    marginBottom: 3,
+  },
+  infoBox: {
+    backgroundColor: '#e0f2fe',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 20,
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#0369a1',
+  },
+  commandsBox: {
+    backgroundColor: '#fef3c7',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 30,
+  },
+  commandsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#92400e',
+  },
+});
+
+export default ConnectionDiagnostics;

@@ -1,0 +1,1843 @@
+// src/screens/HomeScreen-enhanced-v2.js - CORRECTED STRUCTURE
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  RefreshControl,
+  TouchableOpacity,
+  Modal,
+  SafeAreaView,
+  Animated,
+  Dimensions,
+} from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import { useSportsData } from "../hooks/useSportsData";
+import usePremiumAccess from '../hooks/usePremiumAccess';
+import useDailyLocks from '../hooks/useDailyLocks';
+import PromotionalBanner from '../components/PromotionalBanner';
+import { useNavigation } from '@react-navigation/native';
+
+const { width } = Dimensions.get('window');
+
+// SettingsModal component
+const SettingsModal = ({ visible, onClose }) => (
+  <Modal
+    animationType="slide"
+    transparent={true}
+    visible={visible}
+    onRequestClose={onClose}
+  >
+    <View style={styles.modalContainer}>
+      <View style={[styles.modalContent, styles.cardShadow]}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Settings</Text>
+          <TouchableOpacity onPress={onClose}>
+            <Ionicons name="close-outline" size={24} color="#374151" />
+          </TouchableOpacity>
+        </View>
+        
+        <ScrollView style={styles.settingsList}>
+          <TouchableOpacity style={styles.settingItem}>
+            <Ionicons name="notifications-outline" size={22} color="#374151" />
+            <Text style={styles.settingText}>Notifications</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.settingItem}>
+            <Ionicons name="moon-outline" size={22} color="#374151" />
+            <Text style={styles.settingText}>Dark Mode</Text>
+              <View style={styles.switchContainer}>
+                <View style={styles.switch} />
+              </View>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.settingItem}>
+            <Ionicons name="stats-chart-outline" size={22} color="#374151" />
+            <Text style={styles.settingText}>Data Preferences</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.settingItem}>
+            <Ionicons name="help-circle-outline" size={22} color="#374151" />
+            <Text style={styles.settingText}>Help & Support</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.settingItem}>
+            <Ionicons name="information-circle-outline" size={22} color="#374151" />
+            <Text style={styles.settingText}>About</Text>
+            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={[styles.settingItem, { marginTop: 20 }]}>
+            <Ionicons name="log-out-outline" size={22} color="#ef4444" />
+            <Text style={[styles.settingText, { color: '#ef4444' }]}>Log Out</Text>
+          </TouchableOpacity>
+        </ScrollView>
+        
+        <View style={styles.modalFooter}>
+          <Text style={styles.versionText}>Sports Analytics v1.0.0</Text>
+        </View>
+      </View>
+    </View>
+  </Modal>
+);
+
+// Simple Premium Access Paywall Component
+const PremiumAccessPaywall = ({ visible, onClose }) => {
+  const { hasAccess, purchasePremium, startFreeTrial } = usePremiumAccess();
+
+  if (hasAccess) {
+    return (
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={visible}
+        onRequestClose={onClose}
+      >
+        <View style={styles.modalContainer}>
+          <View style={[styles.premiumContent, styles.shadowContainer]}>
+            <LinearGradient
+              colors={['#3b82f6', '#1e40af']}
+              style={[
+                styles.premiumHeader,
+              ]}
+            >
+              <View style={styles.premiumHeaderContent}>
+                <Ionicons name="trophy" size={40} color="#fff" />
+                <Text style={styles.premiumTitle}>Already Premium!</Text>
+                <Text style={styles.premiumSubtitle}>You have full access</Text>
+              </View>
+            </LinearGradient>
+            
+            <TouchableOpacity style={styles.closePremiumButton} onPress={onClose}>
+              <Ionicons name="close-outline" size={24} color="#374151" />
+            </TouchableOpacity>
+            
+            <View style={styles.pricingContainer}>
+              <TouchableOpacity style={styles.manageButton} onPress={onClose}>
+                <Text style={styles.manageButtonText}>Manage Subscription</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+                <Text style={styles.closeButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalContainer}>
+        <View style={[styles.premiumContent, styles.shadowContainer]}>
+          <LinearGradient
+            colors={['#3b82f6', '#1e40af']}
+            style={[
+              styles.premiumHeader,
+            ]}
+          >
+            <View style={styles.premiumHeaderContent}>
+              <Ionicons name="trophy" size={40} color="#fff" />
+              <Text style={styles.premiumTitle}>Premium Access</Text>
+              <Text style={styles.premiumSubtitle}>Unlock all premium features</Text>
+            </View>
+          </LinearGradient>
+          
+          <TouchableOpacity style={styles.closePremiumButton} onPress={onClose}>
+            <Ionicons name="close-outline" size={24} color="#374151" />
+          </TouchableOpacity>
+          
+          <ScrollView style={styles.premiumFeatures}>
+            <View style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Ionicons name="analytics-outline" size={24} color="#3b82f6" />
+              </View>
+              <View style={styles.featureText}>
+                <Text style={styles.featureTitle}>Advanced Analytics</Text>
+                <Text style={styles.featureDescription}>Deep insights & predictions</Text>
+              </View>
+            </View>
+            
+            <View style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Ionicons name="trophy-outline" size={24} color="#10b981" />
+              </View>
+              <View style={styles.featureText}>
+                <Text style={styles.featureTitle}>Fantasy Tools</Text>
+                <Text style={styles.featureDescription}>Player projections & lineups</Text>
+              </View>
+            </View>
+            
+            <View style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Ionicons name="newspaper-outline" size={24} color="#8b5cf6" />
+              </View>
+              <View style={styles.featureText}>
+                <Text style={styles.featureTitle}>Premium News</Text>
+                <Text style={styles.featureDescription}>Exclusive analysis & reports</Text>
+              </View>
+            </View>
+            
+            <View style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Ionicons name="american-football-outline" size={24} color="#ef4444" />
+              </View>
+              <View style={styles.featureText}>
+                <Text style={styles.featureTitle}>NFL Insights</Text>
+                <Text style={styles.featureDescription}>Advanced football analytics</Text>
+              </View>
+            </View>
+            
+            <View style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Ionicons name="tv-outline" size={24} color="#f59e0b" />
+              </View>
+              <View style={styles.featureText}>
+                <Text style={styles.featureTitle}>Live Games</Text>
+                <Text style={styles.featureDescription}>Real-time updates & stats</Text>
+              </View>
+            </View>
+          </ScrollView>
+          
+          <View style={styles.pricingContainer}>
+            <TouchableOpacity 
+              style={styles.premiumButton}
+              onPress={() => purchasePremium('weekly')}
+            >
+              <Text style={styles.premiumButtonText}>GET PREMIUM - $5.99/week</Text>
+              <Text style={styles.premiumButtonSubtext}>Billed weekly</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.secondaryButton}
+              onPress={() => startFreeTrial()}
+            >
+              <Text style={styles.secondaryButtonText}>Try 7 Days Free</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.monthlyButton}
+              onPress={() => purchasePremium('monthly')}
+            >
+              <Text style={styles.monthlyButtonText}>$19.99/month (Save 30%)</Text>
+            </TouchableOpacity>
+            
+            <Text style={styles.pricingNote}>Cancel anytime. No commitment.</Text>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// Simple Daily Locks Paywall Component
+const DailyLocksPaywall = ({ visible, onClose }) => {
+  const { hasAccess: hasLocksAccess, purchaseMoreLocks } = useDailyLocks();
+
+  if (hasLocksAccess) {
+    return (
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={visible}
+        onRequestClose={onClose}
+      >
+        <View style={styles.modalContainer}>
+          <View style={[styles.premiumContent, styles.shadowContainer]}>
+            <LinearGradient
+              colors={['#8b5cf6', '#7c3aed']}
+              style={[
+                styles.premiumHeader,
+              ]}
+            >
+              <View style={styles.premiumHeaderContent}>
+                <Ionicons name="lock-open" size={40} color="#fff" />
+                <Text style={styles.premiumTitle}>Daily Locks Active!</Text>
+                <Text style={styles.premiumSubtitle}>You have access to premium picks</Text>
+              </View>
+            </LinearGradient>
+            
+            <TouchableOpacity style={styles.closePremiumButton} onPress={onClose}>
+              <Ionicons name="close-outline" size={24} color="#374151" />
+            </TouchableOpacity>
+            
+            <View style={styles.pricingContainer}>
+              <TouchableOpacity style={styles.manageButton} onPress={onClose}>
+                <Text style={styles.manageButtonText}>View Daily Picks</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+                <Text style={styles.closeButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalContainer}>
+        <View style={[styles.premiumContent, styles.shadowContainer]}>
+          <LinearGradient
+            colors={['#8b5cf6', '#7c3aed']}
+            style={[
+              styles.premiumHeader,
+            ]}
+          >
+            <View style={styles.premiumHeaderContent}>
+              <Ionicons name="lock-open" size={40} color="#fff" />
+              <Text style={styles.premiumTitle}>Daily Locks</Text>
+              <Text style={styles.premiumSubtitle}>Premium expert picks</Text>
+            </View>
+          </LinearGradient>
+          
+          <TouchableOpacity style={styles.closePremiumButton} onPress={onClose}>
+            <Ionicons name="close-outline" size={24} color="#374151" />
+          </TouchableOpacity>
+          
+          <ScrollView style={styles.premiumFeatures}>
+            <View style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Ionicons name="trophy-outline" size={24} color="#8b5cf6" />
+              </View>
+              <View style={styles.featureText}>
+                <Text style={styles.featureTitle}>Expert Analysis</Text>
+                <Text style={styles.featureDescription}>Hand-picked by top analysts</Text>
+              </View>
+            </View>
+            
+            <View style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Ionicons name="trending-up-outline" size={24} color="#10b981" />
+              </View>
+              <View style={styles.featureText}>
+                <Text style={styles.featureTitle}>Proven Track Record</Text>
+                <Text style={styles.featureDescription}>Consistent performance</Text>
+              </View>
+            </View>
+            
+            <View style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Ionicons name="time-outline" size={24} color="#f59e0b" />
+              </View>
+              <View style={styles.featureText}>
+                <Text style={styles.featureTitle}>Daily Updates</Text>
+                <Text style={styles.featureDescription}>Fresh picks every day</Text>
+              </View>
+            </View>
+            
+            <View style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Ionicons name="checkmark-circle-outline" size={24} color="#3b82f6" />
+              </View>
+              <View style={styles.featureText}>
+                <Text style={styles.featureTitle}>Money-Back Guarantee</Text>
+                <Text style={styles.featureDescription}>Profit or your money back</Text>
+              </View>
+            </View>
+          </ScrollView>
+          
+          <View style={styles.pricingContainer}>
+            <TouchableOpacity 
+              style={styles.premiumButton}
+              onPress={() => purchaseMoreLocks('weekly')}
+            >
+              <Text style={styles.premiumButtonText}>GET DAILY LOCKS - $29.99/week</Text>
+              <Text style={styles.premiumButtonSubtext}>Premium expert picks</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.monthlyButton}
+              onPress={() => purchaseMoreLocks('monthly')}
+            >
+              <Text style={styles.monthlyButtonText}>$99.99/month (Save 15%)</Text>
+            </TouchableOpacity>
+            
+            <Text style={styles.pricingNote}>Premium picks. Cancel anytime.</Text>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+// Main HomeScreen Component - ENHANCED VERSION with Live Games
+const HomeScreen = () => {
+  // ADDED: Initialize navigation
+  const navigation = useNavigation();
+  
+  // FIXED: Destructure error from "../hooks/useSportsData";
+  const { 
+    data: { nba, nfl, news: newsData } = {},
+    isLoading,
+    error, // ADDED: This was missing
+    refreshAllData
+  } = useSportsData({
+    autoRefresh: true,
+    refreshInterval: 30000
+  });
+
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // FIXED: Added safe access with optional chaining
+  const stats = {
+    totalGames: (nba?.games?.length || 0) + (nba?.liveGames?.length || 0),
+    liveGames: nba?.liveGames?.length || 0,
+    upcomingGames: nba?.games?.filter(g => g?.status === 'scheduled').length || 0,
+    avgScore: calculateAvgScore(nba?.games || []),
+    playerCount: nba?.players?.length || 0,
+    totalPoints: calculateTotalPoints(nba?.players || []),
+  };
+  
+  // Modal states
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPremiumPaywall, setShowPremiumPaywall] = useState(false);
+  const [showDailyLocksPaywall, setShowDailyLocksPaywall] = useState(false);
+
+  // Premium hooks
+  const { hasAccess: hasPremiumAccess } = usePremiumAccess();
+  const { hasAccess: hasDailyLocks } = useDailyLocks();
+
+  // Helper functions for calculations
+  function calculateAvgScore(games) {
+    if (!games || games.length === 0) return 0;
+    const totalScores = games.reduce((sum, game) => {
+      const awayScore = game?.awayTeam?.score || game?.awayScore || 0;
+      const homeScore = game?.homeTeam?.score || game?.homeScore || 0;
+      return sum + awayScore + homeScore;
+    }, 0);
+    return (totalScores / games.length).toFixed(1);
+  }
+
+  function calculateTotalPoints(players) {
+    if (!players || players.length === 0) return 0;
+    return players.reduce((sum, player) => sum + (player?.points || 0), 0).toFixed(0);
+  }
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    refreshAllData().catch(err => {
+      console.error('Refresh error:', err);
+    }).finally(() => {
+      setRefreshing(false);
+    });
+  };
+
+  // Error handling
+  if (error) {
+    return (
+      <View style={styles.centered}>
+        <Ionicons name="alert-circle-outline" size={60} color="#ef4444" />
+        <Text style={styles.errorText}>Error loading data</Text>
+        <Text style={styles.errorSubtext}>
+          {typeof error === 'string' ? error : 'Please try again'}
+        </Text>
+        <TouchableOpacity style={styles.retryButton} onPress={refreshAllData}>
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const renderHeader = () => (
+    <LinearGradient
+      colors={['#1e3a8a', '#3b82f6']}
+      style={[
+        styles.header,
+        styles.shadowContainer
+      ]}
+    >
+      <View style={styles.headerTopRow}>
+        <TouchableOpacity 
+          style={styles.headerIconButton} 
+          onPress={() => setShowSettings(true)}
+        >
+          <Ionicons name="settings" size={24} color="white" />
+        </TouchableOpacity>
+        
+        <View style={styles.headerCenter}>
+          <Text style={styles.title}>NBA Analytics Hub</Text>
+          <Text style={styles.subtitle}>Real-time insights & predictions</Text>
+        </View>
+        
+        {/* UPDATED: Added headerActions with Editor's button */}
+        <View style={styles.headerActions}>
+          {/* Add Editor's Button Here */}
+          <TouchableOpacity 
+            style={[styles.headerButton, styles.editorButton]}
+            onPress={() => navigation.navigate('EditorUpdates')}
+          >
+            <Ionicons name="megaphone" size={16} color="white" />
+            <Text style={styles.editorButtonText}>Updates</Text>
+          </TouchableOpacity>
+          
+          {/* Existing premium button */}
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => setShowPremiumPaywall(true)}
+          >
+            <Ionicons name="star-outline" size={18} color="#fbbf24" />
+          </TouchableOpacity>
+          
+          {/* Additional buttons from the editor's button code */}
+          <TouchableOpacity style={styles.headerButton}>
+            <Ionicons name="notifications-outline" size={18} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButton}>
+            <Ionicons name="search" size={18} color="white" />
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      <View style={styles.dateBadge}>
+        <Ionicons name="calendar-outline" size={14} color="#fff" />
+        <Text style={styles.dateText}>Today, {new Date().toLocaleDateString()}</Text>
+      </View>
+    </LinearGradient>
+  );
+
+  const renderEnhancedStatsCard = () => (
+    <View style={[styles.enhancedStatsContainer, styles.cardShadow]}>
+      <Text style={styles.enhancedStatsTitle}>📊 Today's Analytics</Text>
+      <View style={styles.enhancedStatsGrid}>
+        <View style={[styles.enhancedStatItem, styles.cardShadow]}>
+          <LinearGradient
+            colors={['#3b82f620', '#3b82f640']}
+            style={styles.enhancedStatIcon}
+          >
+            <Ionicons name="basketball" size={24} color="#3b82f6" />
+          </LinearGradient>
+          <Text style={styles.enhancedStatNumber}>{stats.totalGames}</Text>
+          <Text style={styles.enhancedStatLabel}>Total Games</Text>
+        </View>
+        
+        <View style={[styles.enhancedStatItem, styles.cardShadow]}>
+          <LinearGradient
+            colors={['#ef444420', '#ef444440']}
+            style={styles.enhancedStatIcon}
+          >
+            <Ionicons name="pulse" size={24} color="#ef4444" />
+          </LinearGradient>
+          <Text style={styles.enhancedStatNumber}>{stats.liveGames}</Text>
+          <Text style={styles.enhancedStatLabel}>Live Now</Text>
+        </View>
+        
+        <View style={[styles.enhancedStatItem, styles.cardShadow]}>
+          <LinearGradient
+            colors={['#10b98120', '#10b98140']}
+            style={styles.enhancedStatIcon}
+          >
+            <Ionicons name="calendar" size={24} color="#10b981" />
+          </LinearGradient>
+          <Text style={styles.enhancedStatNumber}>{stats.upcomingGames}</Text>
+          <Text style={styles.enhancedStatLabel}>Upcoming</Text>
+        </View>
+        
+        <View style={[styles.enhancedStatItem, styles.cardShadow]}>
+          <LinearGradient
+            colors={['#8b5cf620', '#8b5cf640']}
+            style={styles.enhancedStatIcon}
+          >
+            <Ionicons name="stats-chart" size={24} color="#8b5cf6" />
+          </LinearGradient>
+          <Text style={styles.enhancedStatNumber}>{stats.avgScore}</Text>
+          <Text style={styles.enhancedStatLabel}>Avg Score</Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  // UPDATED: Enhanced game card renderer with safer object handling from File 1
+  const renderEnhancedGameCard = (game, index, isLiveGame = false) => {
+    const isLive = isLiveGame || game?.status === 'live';
+    const isFinal = game?.status === 'final';
+    
+    // SAFER helper functions with better object handling
+    const getTeamName = (team) => {
+      if (!team) return 'TBD';
+      if (typeof team === 'string') return team;
+      if (typeof team === 'object' && team.name) return String(team.name);
+      return 'TBD';
+    };
+
+    const getTeamScore = (team) => {
+      if (!team) return '0';
+      if (typeof team === 'object' && team.score !== undefined) return String(team.score);
+      if (typeof team === 'number') return String(team);
+      return '0';
+    };
+
+    const getTeamRecord = (team) => {
+      if (!team || typeof team !== 'object') return '';
+      return String(team.record || '');
+    };
+
+    // ADDED: Safely extract team data before using in JSX
+    const awayTeamName = getTeamName(game?.awayTeam);
+    const homeTeamName = getTeamName(game?.homeTeam);
+    const awayTeamScore = getTeamScore(game?.awayTeam);
+    const homeTeamScore = getTeamScore(game?.homeTeam);
+    const awayTeamRecord = getTeamRecord(game?.awayTeam);
+    const homeTeamRecord = getTeamRecord(game?.homeTeam);
+
+    return (
+      <TouchableOpacity 
+        key={game?.gameId || game?.id || index}
+        onPress={() => navigation.navigate('GameDetails', { 
+          gameId: game?.id || game?.gameId,
+          gameData: game 
+        })}
+      >
+        <View style={[
+          styles.enhancedGameCard,
+          styles.cardShadow,
+          isLive && styles.liveGameCard,
+          isFinal && styles.finalGameCard
+        ]}>
+          {/* Game Header */}
+          <View style={styles.enhancedGameHeader}>
+            <View style={[
+              styles.gameStatusBadge,
+              isLive && styles.liveBadge,
+              isFinal && styles.finalBadge,
+              !isLive && !isFinal && styles.upcomingBadge
+            ]}>
+              {isLive && (
+                <View style={styles.pulseDot} />
+              )}
+              <Text style={[
+                styles.gameStatusText,
+                isLive && styles.liveBadgeText,
+                isFinal && styles.finalBadgeText,
+                !isLive && !isFinal && styles.upcomingBadgeText
+              ]}>
+                {isLive ? `LIVE • ${game?.period || 'Qtr'}` : (game?.status || 'SCHEDULED').toUpperCase()}
+              </Text>
+            </View>
+            {game?.timeRemaining && (
+              <Text style={styles.gameTimeRemaining}>{String(game.timeRemaining)}</Text>
+            )}
+          </View>
+
+          {/* Teams and Score - USING EXTRACTED VALUES */}
+          <View style={styles.enhancedGameTeams}>
+            {/* Away Team */}
+            <View style={styles.enhancedTeamColumn}>
+              <View style={styles.enhancedTeamInfo}>
+                <View style={styles.enhancedTeamLogo}>
+                  <Text style={styles.enhancedTeamLogoText}>
+                    {awayTeamName.split(' ').map(w => w[0]).join('').slice(0, 2) || 'AW'}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={styles.enhancedTeamName}>{awayTeamName}</Text>
+                  <Text style={styles.enhancedTeamRecord}>
+                    {awayTeamRecord ? `Away • ${awayTeamRecord}` : 'Away'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.enhancedTeamScore}>{awayTeamScore}</Text>
+            </View>
+
+            {/* VS Divider */}
+            <View style={styles.vsColumn}>
+              <Text style={styles.vsText}>@</Text>
+            </View>
+
+            {/* Home Team */}
+            <View style={styles.enhancedTeamColumn}>
+              <Text style={styles.enhancedTeamScore}>{homeTeamScore}</Text>
+              <View style={[styles.enhancedTeamInfo, styles.homeTeamInfo]}>
+                <View>
+                  <Text style={styles.enhancedTeamName}>{homeTeamName}</Text>
+                  <Text style={styles.enhancedTeamRecord}>
+                    {homeTeamRecord ? `Home • ${homeTeamRecord}` : 'Home'}
+                  </Text>
+                </View>
+                <View style={styles.enhancedTeamLogo}>
+                  <Text style={styles.enhancedTeamLogoText}>
+                    {homeTeamName.split(' ').map(w => w[0]).join('').slice(0, 2) || 'HM'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Game Footer */}
+          <View style={styles.enhancedGameFooter}>
+            <View style={styles.gameInfoRow}>
+              {game?.broadcast && (
+                <View style={styles.broadcastInfo}>
+                  <Ionicons name="tv" size={12} color="#6b7280" />
+                  <Text style={styles.broadcastText}>{String(game.broadcast)}</Text>
+                </View>
+              )}
+              <View style={styles.gameVenue}>
+                <Ionicons name="location" size={12} color="#6b7280" />
+                <Text style={styles.gameVenueText}>{String(game?.venue || game?.arena || 'TBD')}</Text>
+              </View>
+            </View>
+            {game?.lastPlay && isLive && (
+              <Text style={styles.lastPlayText} numberOfLines={1}>
+                ⚡ {String(game.lastPlay)}
+              </Text>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  // UPDATED: Featured Player with safer team handling from File 2
+  const renderFeaturedPlayer = () => {
+    const players = nba?.players || [];
+    if (players.length === 0) return null;
+    
+    // Find top player by points
+    const topPlayer = [...players].sort((a, b) => (b?.points || 0) - (a?.points || 0))[0];
+    
+    // FIX: Safely get team name
+    const getPlayerTeam = (player) => {
+      if (!player) return '';
+      if (typeof player.team === 'string') return player.team;
+      if (typeof player.team === 'object' && player.team.name) return String(player.team.name);
+      return '';
+    };
+    
+    const teamName = getPlayerTeam(topPlayer);
+    
+    return (
+      <LinearGradient
+        colors={['#1E293B', '#334155']}
+        style={[styles.featuredPlayerCard, styles.cardShadow]}
+      >
+        <View style={styles.featuredPlayerContent}>
+          <View style={styles.featuredPlayerHeader}>
+            <Text style={styles.featuredPlayerTitle}>⭐ Player of the Day</Text>
+            <View style={styles.playerRating}>
+              <Ionicons name="star" size={14} color="#FFD700" />
+              <Text style={styles.playerRatingText}>9.8</Text>
+            </View>
+          </View>
+          
+          <View style={styles.featuredPlayerBody}>
+            <View style={styles.featuredPlayerInfo}>
+              <Text style={styles.featuredPlayerName}>{topPlayer?.name || 'N/A'}</Text>
+              <Text style={styles.featuredPlayerDetails}>
+                {teamName || ''} • {String(topPlayer?.position || '')}
+              </Text>
+              <View style={styles.featuredPlayerStats}>
+                <View style={styles.featuredStatItem}>
+                  <Text style={styles.featuredStatValue}>{topPlayer?.points || 'N/A'}</Text>
+                  <Text style={styles.featuredStatLabel}>PTS</Text>
+                </View>
+                <View style={styles.featuredStatItem}>
+                  <Text style={styles.featuredStatValue}>{topPlayer?.rebounds || 'N/A'}</Text>
+                  <Text style={styles.featuredStatLabel}>REB</Text>
+                </View>
+                <View style={styles.featuredStatItem}>
+                  <Text style={styles.featuredStatValue}>{topPlayer?.assists || 'N/A'}</Text>
+                  <Text style={styles.featuredStatLabel}>AST</Text>
+                </View>
+              </View>
+            </View>
+            <View style={styles.featuredPlayerIcon}>
+              <FontAwesome5 name="basketball-ball" size={40} color="rgba(255,255,255,0.2)" />
+            </View>
+          </View>
+          
+          <TouchableOpacity style={styles.viewPlayerStatsButton}>
+            <Text style={styles.viewPlayerStatsText}>View Advanced Stats</Text>
+            <Ionicons name="stats-chart" size={16} color="#FFF" />
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+    );
+  };
+
+  const renderQuickActions = () => (
+    <View style={[styles.quickActionsContainer, styles.cardShadow]}>
+      <TouchableOpacity style={styles.quickActionButton}>
+        <View style={[styles.quickActionIcon, { backgroundColor: '#3b82f620' }]}>
+          <Ionicons name="stats-chart" size={24} color="#3b82f6" />
+        </View>
+        <Text style={styles.quickActionText}>Player Stats</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity style={styles.quickActionButton}>
+        <View style={[styles.quickActionIcon, { backgroundColor: '#10b98120' }]}>
+          <Ionicons name="trophy" size={24} color="#10b981" />
+        </View>
+        <Text style={styles.quickActionText}>Fantasy</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity style={styles.quickActionButton}>
+        <View style={[styles.quickActionIcon, { backgroundColor: '#f59e0b20' }]}>
+          <Ionicons name="sparkles" size={24} color="#f59e0b" />
+        </View>
+        <Text style={styles.quickActionText}>Daily Picks</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity style={styles.quickActionButton}>
+        <View style={[styles.quickActionIcon, { backgroundColor: '#8b5cf620' }]}>
+          <Ionicons name="analytics" size={24} color="#8b5cf6" />
+        </View>
+        <Text style={styles.quickActionText}>Analytics</Text>
+      </TouchableOpacity>
+      
+      {/* FIXED: Changed from "🏒" to "magnet-outline" icon */}
+      <TouchableOpacity 
+        style={styles.quickActionButton}
+        onPress={() => navigation.navigate('NHL')}
+      >
+        <View style={[styles.quickActionIcon, { backgroundColor: '#3b82f620' }]}>
+          <Ionicons name="magnet-outline" size={24} color="#3b82f6" />
+        </View>
+        <Text style={styles.quickActionText}>NHL Analytics</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  if (isLoading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#3b82f6" />
+        <Text style={styles.loadingText}>Loading NBA Analytics...</Text>
+      </View>
+    );
+  }
+
+  const liveGames = nba?.liveGames || [];
+  const games = nba?.games || [];
+  const newsItems = newsData?.items || [];
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView 
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {/* Promotional Banner - Comment out if not created yet */}
+        {/* <PromotionalBanner /> */}
+        
+        {renderHeader()}
+        {renderEnhancedStatsCard()}
+        
+        {/* Featured Player */}
+        {renderFeaturedPlayer()}
+
+        {/* Live Games Section - Uses liveGames state */}
+        <View style={[styles.section, styles.cardShadow]}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="pulse" size={20} color="#ef4444" />
+              <Text style={styles.sectionTitle}>Live Games</Text>
+              {liveGames.length > 0 && (
+                <View style={styles.liveCountBadge}>
+                  <View style={styles.pulseDot} />
+                  <Text style={styles.liveCountText}>{liveGames.length} LIVE</Text>
+                </View>
+              )}
+            </View>
+            <TouchableOpacity>
+              <Text style={styles.seeAll}>See All →</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {liveGames.length > 0 ? (
+            liveGames.map((game, index) => renderEnhancedGameCard(game, index, true))
+          ) : (
+            <View style={[styles.noGamesContainer, styles.cardShadow]}>
+              <Ionicons name="time" size={48} color="#9ca3af" />
+              <Text style={styles.noGamesText}>No live games at the moment</Text>
+              <Text style={styles.noGamesSubtext}>Games refresh every 30 seconds</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Upcoming Games - Uses regular games data */}
+        <View style={[styles.section, styles.cardShadow]}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="calendar" size={20} color="#3b82f6" />
+              <Text style={styles.sectionTitle}>Upcoming Games</Text>
+            </View>
+            <TouchableOpacity>
+              <Text style={styles.seeAll}>See All →</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {games.filter(g => g?.status === 'scheduled').length > 0 ? (
+            games.filter(g => g?.status === 'scheduled').slice(0, 3).map((game, index) => 
+              renderEnhancedGameCard(game, index, false)
+            )
+          ) : (
+            <Text style={styles.emptyText}>No upcoming games scheduled</Text>
+          )}
+        </View>
+
+        {/* Quick Actions */}
+        {renderQuickActions()}
+
+        {/* FIXED: Changed from "ice-hockey" to "magnet-outline" icon */}
+        <TouchableOpacity 
+          onPress={() => navigation.navigate('NHL')}
+          style={[styles.nhlButton, styles.cardShadow]}
+        >
+          <Ionicons name="magnet-outline" size={24} color="#3b82f6" />
+          <Text style={styles.nhlButtonText}>NHL Games</Text>
+        </TouchableOpacity>
+
+        {/* Premium Access Banner */}
+        {!hasPremiumAccess && (
+          <TouchableOpacity 
+            style={styles.premiumBanner}
+            onPress={() => setShowPremiumPaywall(true)}
+          >
+            <LinearGradient
+              colors={['#3b82f6', '#1e40af']}
+              style={[
+                styles.premiumBannerGradient,
+                styles.shadowContainer
+              ]}
+            >
+              <Ionicons name="trophy" size={28} color="#fff" />
+              <View style={styles.premiumBannerText}>
+                <Text style={styles.premiumBannerTitle}>Premium Access</Text>
+                <Text style={styles.premiumBannerSubtitle}>
+                  Analytics, Fantasy, News, NFL & Live Games
+                </Text>
+                <Text style={styles.premiumBannerPrice}>From $5.99/week</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={24} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+
+        {/* Daily Locks Banner */}
+        {!hasDailyLocks && (
+          <TouchableOpacity 
+            style={styles.dailyLocksBanner}
+            onPress={() => setShowDailyLocksPaywall(true)}
+          >
+            <LinearGradient
+              colors={['#8b5cf6', '#7c3aed']}
+              style={[
+                styles.dailyLocksBannerGradient,
+                styles.shadowContainer
+              ]}
+            >
+              <Ionicons name="lock-open" size={28} color="#fff" />
+              <View style={styles.dailyLocksBannerText}>
+                <Text style={styles.dailyLocksBannerTitle}>Daily Locks</Text>
+                <Text style={styles.dailyLocksBannerSubtitle}>
+                  Premium expert picks
+                </Text>
+                <Text style={styles.dailyLocksBannerPrice}>From $29.99/week</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={24} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>Live games update every 30 seconds</Text>
+          <Text style={styles.footerSubtext}>Last updated: {new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</Text>
+        </View>
+      </ScrollView>
+      
+      {/* Modals */}
+      <SettingsModal 
+        visible={showSettings} 
+        onClose={() => setShowSettings(false)} 
+      />
+      <PremiumAccessPaywall 
+        visible={showPremiumPaywall} 
+        onClose={() => setShowPremiumPaywall(false)} 
+      />
+      <DailyLocksPaywall 
+        visible={showDailyLocksPaywall} 
+        onClose={() => setShowDailyLocksPaywall(false)} 
+      />
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#666',
+    fontSize: 16,
+  },
+  errorText: {
+    marginTop: 10,
+    color: '#ef4444',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  errorSubtext: {
+    marginTop: 5,
+    color: '#9ca3af',
+    fontSize: 14,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  retryButton: {
+    marginTop: 20,
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  // Shadow styles from File 1
+  shadowContainer: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  cardShadow: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  header: {
+    padding: 25,
+    paddingTop: 60,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 15,
+  },
+  headerCenter: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: 'white',
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: 'white',
+    opacity: 0.9,
+    marginTop: 5,
+    textAlign: 'center',
+  },
+  // NEW: Header Actions Styles
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
+    padding: 8,
+    marginLeft: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // NEW: Editor Button Styles
+  editorButton: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  editorButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  headerIconButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 20,
+  },
+  premiumIconButton: {
+    padding: 8,
+    backgroundColor: 'rgba(251, 191, 36, 0.2)',
+    borderRadius: 20,
+  },
+  dateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 10,
+    alignSelf: 'center',
+  },
+  dateText: {
+    color: 'white',
+    fontSize: 12,
+    marginLeft: 5,
+  },
+  // Enhanced Stats
+  enhancedStatsContainer: {
+    backgroundColor: 'white',
+    margin: 15,
+    marginTop: -20,
+    borderRadius: 16,
+    padding: 20,
+  },
+  enhancedStatsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 16,
+  },
+  enhancedStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  enhancedStatItem: {
+    width: '48%',
+    alignItems: 'center',
+    marginBottom: 16,
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 12,
+  },
+  enhancedStatIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  enhancedStatNumber: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  enhancedStatLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  // Featured Player
+  featuredPlayerCard: {
+    marginHorizontal: 15,
+    marginBottom: 20,
+    borderRadius: 16,
+    padding: 20,
+  },
+  featuredPlayerContent: {
+    flex: 1,
+  },
+  featuredPlayerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  featuredPlayerTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  playerRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  playerRatingText: {
+    color: '#FFD700',
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
+  featuredPlayerBody: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  featuredPlayerInfo: {
+    flex: 1,
+  },
+  featuredPlayerName: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  featuredPlayerDetails: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  featuredPlayerStats: {
+    flexDirection: 'row',
+  },
+  featuredStatItem: {
+    marginRight: 20,
+  },
+  featuredStatValue: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  featuredStatLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  featuredPlayerIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewPlayerStatsButton: {
+    flexDirection: 'row',
+    backgroundColor: '#3b82f6',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewPlayerStatsText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  // Enhanced Game Card
+  enhancedGameCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  liveGameCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#ef4444',
+  },
+  finalGameCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#10b981',
+  },
+  enhancedGameHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  gameStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  liveBadge: {
+    backgroundColor: '#FEE2E2',
+  },
+  finalBadge: {
+    backgroundColor: '#D1FAE5',
+  },
+  upcomingBadge: {
+    backgroundColor: '#DBEAFE',
+  },
+  pulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+    marginRight: 6,
+  },
+  gameStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  liveBadgeText: {
+    color: '#DC2626',
+  },
+  finalBadgeText: {
+    color: '#065F46',
+  },
+  upcomingBadgeText: {
+    color: '#1E40AF',
+  },
+  gameTimeRemaining: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  enhancedGameTeams: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  enhancedTeamColumn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  enhancedTeamInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  homeTeamInfo: {
+    justifyContent: 'flex-end',
+  },
+  enhancedTeamLogo: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 8,
+  },
+  enhancedTeamLogoText: {
+    color: '#3b82f6',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  enhancedTeamName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  enhancedTeamRecord: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  enhancedTeamScore: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#1E293B',
+  },
+  vsColumn: {
+    alignItems: 'center',
+    marginHorizontal: 12,
+  },
+  vsText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '700',
+  },
+  enhancedGameFooter: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  gameInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 8,
+  },
+  broadcastInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  broadcastText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginLeft: 6,
+  },
+  gameVenue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  gameVenueText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginLeft: 6,
+  },
+  lastPlayText: {
+    fontSize: 12,
+    color: '#ef4444',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  gameDetailsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+  },
+  gameDetailsButtonText: {
+    color: '#3b82f6',
+    fontSize: 12,
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  section: {
+    backgroundColor: 'white',
+    marginHorizontal: 15,
+    marginBottom: 20,
+    padding: 20,
+    borderRadius: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginLeft: 8,
+  },
+  liveCountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 12,
+  },
+  liveCountText: {
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  seeAll: {
+    color: '#3b82f6',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  noGamesContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    backgroundColor: 'white',
+    borderRadius: 16,
+  },
+  noGamesText: {
+    fontSize: 16,
+    color: '#64748B',
+    fontWeight: '600',
+    marginTop: 12,
+  },
+  noGamesSubtext: {
+    fontSize: 13,
+    color: '#94A3B8',
+    marginTop: 4,
+  },
+  emptyText: {
+    color: '#9ca3af',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    padding: 20,
+    fontSize: 16,
+  },
+  // Quick Actions
+  quickActionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginHorizontal: 15,
+    marginBottom: 20,
+    paddingHorizontal: 8,
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 16,
+  },
+  quickActionButton: {
+    alignItems: 'center',
+  },
+  quickActionIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  quickActionText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  nhlButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    padding: 16,
+    borderRadius: 12,
+    marginHorizontal: 15,
+    marginTop: 10,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  nhlButtonText: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 12,
+  },
+  premiumBanner: {
+    marginHorizontal: 15,
+    marginBottom: 10,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  premiumBannerGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+  },
+  premiumBannerText: {
+    flex: 1,
+    marginLeft: 15,
+  },
+  premiumBannerTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  premiumBannerSubtitle: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  premiumBannerPrice: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 5,
+  },
+  dailyLocksBanner: {
+    marginHorizontal: 15,
+    marginBottom: 30,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  dailyLocksBannerGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+  },
+  dailyLocksBannerText: {
+    flex: 1,
+    marginLeft: 15,
+  },
+  dailyLocksBannerTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  dailyLocksBannerSubtitle: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  dailyLocksBannerPrice: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 5,
+  },
+  footer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    marginTop: 8,
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  footerSubtext: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    height: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  settingsList: {
+    padding: 20,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  settingText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#374151',
+    marginLeft: 15,
+  },
+  switchContainer: {
+    width: 50,
+    height: 28,
+    backgroundColor: '#d1d5db',
+    borderRadius: 14,
+    justifyContent: 'center',
+    padding: 2,
+  },
+  switch: {
+    width: 24,
+    height: 24,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    alignSelf: 'flex-end',
+  },
+  modalFooter: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    alignItems: 'center',
+  },
+  versionText: {
+    fontSize: 12,
+    color: '#9ca3af',
+  },
+  // Premium Modal Styles
+  premiumContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    height: '85%',
+  },
+  premiumHeader: {
+    padding: 40,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    alignItems: 'center',
+  },
+  premiumHeaderContent: {
+    alignItems: 'center',
+  },
+  premiumTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: 'white',
+    marginTop: 15,
+  },
+  premiumSubtitle: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.9)',
+    marginTop: 5,
+  },
+  closePremiumButton: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+  },
+  premiumFeatures: {
+    padding: 20,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  featureIcon: {
+    width: 50,
+    height: 50,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  featureText: {
+    flex: 1,
+    marginLeft: 15,
+  },
+  featureTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  featureDescription: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  pricingContainer: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  premiumButton: {
+    backgroundColor: '#f59e0b',
+    padding: 18,
+    borderRadius: 15,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  premiumButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  premiumButtonSubtext: {
+    color: 'white',
+    fontSize: 12,
+    opacity: 0.9,
+    marginTop: 2,
+  },
+  secondaryButton: {
+    padding: 15,
+    borderRadius: 15,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#f59e0b',
+    marginBottom: 10,
+  },
+  secondaryButtonText: {
+    color: '#f59e0b',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  monthlyButton: {
+    backgroundColor: '#3b82f6',
+    padding: 15,
+    borderRadius: 15,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  monthlyButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  manageButton: {
+    backgroundColor: '#10b981',
+    padding: 18,
+    borderRadius: 15,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  manageButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  closeButton: {
+    padding: 15,
+    borderRadius: 15,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#6b7280',
+  },
+  closeButtonText: {
+    color: '#6b7280',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  pricingNote: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: '#9ca3af',
+    marginTop: 10,
+  },
+});
+
+// ⭐⭐⭐ CRITICAL: This MUST be at the VERY END of the file ⭐⭐⭐
+export default HomeScreen;
+

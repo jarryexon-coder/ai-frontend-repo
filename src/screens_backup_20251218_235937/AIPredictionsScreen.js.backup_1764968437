@@ -1,0 +1,538 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Dimensions,
+  RefreshControl
+} from 'react-native';
+import { LineChart, BarChart } from 'react-native-chart-kit';
+import { API_BASE_URL } from '../config/api';
+
+const screenWidth = Dimensions.get('window').width;
+
+export default function AIPredictionsScreen() {
+  const [loading, setLoading] = useState(true);
+  const [predictions, setPredictions] = useState([]);
+  const [accuracy, setAccuracy] = useState(0);
+  const [selectedMetric, setSelectedMetric] = useState('points');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchPredictions = async () => {
+    try {
+      setLoading(true);
+      
+      // In a real app, fetch from your AI endpoint
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Generate sample AI predictions
+      const samplePredictions = [
+        {
+          id: 1,
+          player: 'Stephen Curry',
+          team: 'GSW',
+          actual: 32.4,
+          predicted: 31.8,
+          accuracy: 94.2,
+          confidence: 'high',
+          metrics: {
+            points: { actual: 32.4, predicted: 31.8 },
+            rebounds: { actual: 5.2, predicted: 5.1 },
+            assists: { actual: 6.8, predicted: 6.5 },
+            three_pointers: { actual: 6.1, predicted: 5.9 }
+          }
+        },
+        {
+          id: 2,
+          player: 'Luka Dončić',
+          team: 'DAL',
+          actual: 34.1,
+          predicted: 33.2,
+          accuracy: 91.5,
+          confidence: 'high',
+          metrics: {
+            points: { actual: 34.1, predicted: 33.2 },
+            rebounds: { actual: 8.9, predicted: 8.5 },
+            assists: { actual: 9.3, predicted: 9.0 },
+            three_pointers: { actual: 4.2, predicted: 4.0 }
+          }
+        },
+        {
+          id: 3,
+          player: 'Giannis Antetokounmpo',
+          team: 'MIL',
+          actual: 30.8,
+          predicted: 31.5,
+          accuracy: 88.7,
+          confidence: 'medium',
+          metrics: {
+            points: { actual: 30.8, predicted: 31.5 },
+            rebounds: { actual: 11.4, predicted: 11.8 },
+            assists: { actual: 6.1, predicted: 6.3 },
+            free_throws: { actual: 68.9, predicted: 69.5 }
+          }
+        },
+        {
+          id: 4,
+          player: 'Nikola Jokić',
+          team: 'DEN',
+          actual: 25.3,
+          predicted: 24.8,
+          accuracy: 96.1,
+          confidence: 'high',
+          metrics: {
+            points: { actual: 25.3, predicted: 24.8 },
+            rebounds: { actual: 12.1, predicted: 11.9 },
+            assists: { actual: 9.7, predicted: 9.8 },
+            efficiency: { actual: 32.8, predicted: 32.5 }
+          }
+        },
+        {
+          id: 5,
+          player: 'Jayson Tatum',
+          team: 'BOS',
+          actual: 27.9,
+          predicted: 27.2,
+          accuracy: 92.3,
+          confidence: 'high',
+          metrics: {
+            points: { actual: 27.9, predicted: 27.2 },
+            rebounds: { actual: 8.5, predicted: 8.3 },
+            assists: { actual: 4.9, predicted: 4.8 },
+            three_pointers: { actual: 4.1, predicted: 3.9 }
+          }
+        }
+      ];
+      
+      // Calculate average accuracy
+      const avgAccuracy = samplePredictions.reduce((sum, p) => sum + p.accuracy, 0) / samplePredictions.length;
+      
+      setPredictions(samplePredictions);
+      setAccuracy(avgAccuracy);
+      
+    } catch (error) {
+      console.error('Error fetching AI predictions:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPredictions();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchPredictions();
+  };
+
+  const getConfidenceColor = (confidence) => {
+    switch (confidence) {
+      case 'high': return '#10b981';
+      case 'medium': return '#f59e0b';
+      case 'low': return '#ef4444';
+      default: return '#6b7280';
+    }
+  };
+
+  const renderPredictionItem = (prediction) => (
+    <View key={prediction.id} style={styles.predictionCard}>
+      <View style={styles.predictionHeader}>
+        <View>
+          <Text style={styles.playerName}>{prediction.player}</Text>
+          <Text style={styles.teamText}>{prediction.team}</Text>
+        </View>
+        <View style={styles.accuracyContainer}>
+          <Text style={styles.accuracyLabel}>Accuracy</Text>
+          <Text style={styles.accuracyValue}>{prediction.accuracy.toFixed(1)}%</Text>
+        </View>
+      </View>
+
+      <View style={styles.comparisonRow}>
+        <View style={styles.comparisonItem}>
+          <Text style={styles.comparisonLabel}>Predicted</Text>
+          <Text style={styles.comparisonValue}>{prediction.predicted}</Text>
+        </View>
+        <View style={styles.comparisonArrow}>
+          <Text style={styles.arrowText}>→</Text>
+        </View>
+        <View style={styles.comparisonItem}>
+          <Text style={styles.comparisonLabel}>Actual</Text>
+          <Text style={styles.comparisonValue}>{prediction.actual}</Text>
+        </View>
+        <View style={[styles.confidenceBadge, { backgroundColor: getConfidenceColor(prediction.confidence) }]}>
+          <Text style={styles.confidenceText}>
+            {prediction.confidence.toUpperCase()}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.metricsGrid}>
+        {Object.entries(prediction.metrics).map(([metric, values]) => (
+          <View key={metric} style={styles.metricItem}>
+            <Text style={styles.metricLabel}>
+              {metric.replace('_', ' ').toUpperCase()}
+            </Text>
+            <View style={styles.metricValues}>
+              <Text style={styles.metricPredicted}>{values.predicted}</Text>
+              <Text style={styles.metricArrow}>→</Text>
+              <Text style={styles.metricActual}>{values.actual}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+
+  const prepareAccuracyChartData = () => {
+    return {
+      labels: predictions.map(p => p.player.split(' ')[1]),
+      datasets: [{
+        data: predictions.map(p => p.accuracy)
+      }]
+    };
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#1e3a8a" />
+        <Text style={styles.loadingText}>Analyzing player patterns...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      style={styles.container}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor="#1e3a8a"
+        />
+      }
+    >
+      <View style={styles.header}>
+        <Text style={styles.title}>🤖 AI Predictions</Text>
+        <Text style={styles.subtitle}>Machine learning powered insights</Text>
+      </View>
+
+      <View style={styles.overviewCard}>
+        <View style={styles.overviewItem}>
+          <Text style={styles.overviewLabel}>Average Accuracy</Text>
+          <Text style={styles.overviewValue}>{accuracy.toFixed(1)}%</Text>
+        </View>
+        <View style={styles.overviewItem}>
+          <Text style={styles.overviewLabel}>Total Predictions</Text>
+          <Text style={styles.overviewValue}>{predictions.length}</Text>
+        </View>
+        <View style={styles.overviewItem}>
+          <Text style={styles.overviewLabel}>High Confidence</Text>
+          <Text style={styles.overviewValue}>
+            {predictions.filter(p => p.confidence === 'high').length}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.chartCard}>
+        <Text style={styles.chartTitle}>Prediction Accuracy by Player</Text>
+        <BarChart
+          data={prepareAccuracyChartData()}
+          width={screenWidth - 40}
+          height={220}
+          chartConfig={{
+            backgroundColor: '#ffffff',
+            backgroundGradientFrom: '#f8fafc',
+            backgroundGradientTo: '#ffffff',
+            decimalPlaces: 1,
+            color: (opacity = 1) => `rgba(30, 58, 138, ${opacity})`,
+            labelColor: (opacity = 1) => `rgba(30, 41, 59, ${opacity})`,
+          }}
+          style={styles.chart}
+        />
+      </View>
+
+      <View style={styles.predictionsList}>
+        <Text style={styles.listTitle}>Recent Predictions</Text>
+        {predictions.map(renderPredictionItem)}
+      </View>
+
+      <View style={styles.insightsCard}>
+        <Text style={styles.insightsTitle}>💡 AI Insights</Text>
+        <View style={styles.insightItem}>
+          <Text style={styles.insightText}>
+            • Stephen Curry's three-point accuracy is most predictable (94% accuracy)
+          </Text>
+        </View>
+        <View style={styles.insightItem}>
+          <Text style={styles.insightText}>
+            • Jokić's efficiency rating predictions are most reliable
+          </Text>
+        </View>
+        <View style={styles.insightItem}>
+          <Text style={styles.insightText}>
+            • Giannis's free throw predictions need more training data
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.footer}>
+        <Text style={styles.footerText}>
+          Model trained on 50,000+ historical games
+        </Text>
+        <Text style={styles.footerSubtext}>
+          Updated daily with new game data
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#64748b',
+  },
+  header: {
+    padding: 20,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    marginBottom: 5,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#64748b',
+  },
+  overviewCard: {
+    backgroundColor: 'white',
+    margin: 20,
+    padding: 20,
+    borderRadius: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  overviewItem: {
+    alignItems: 'center',
+  },
+  overviewLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 4,
+  },
+  overviewValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+  },
+  chartCard: {
+    backgroundColor: 'white',
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  chartTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 15,
+  },
+  chart: {
+    borderRadius: 12,
+  },
+  predictionsList: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  listTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 15,
+  },
+  predictionCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  predictionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  playerName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  teamText: {
+    fontSize: 14,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  accuracyContainer: {
+    alignItems: 'center',
+  },
+  accuracyLabel: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  accuracyValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#10b981',
+  },
+  comparisonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderRadius: 8,
+  },
+  comparisonItem: {
+    alignItems: 'center',
+  },
+  comparisonLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 4,
+  },
+  comparisonValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+  },
+  comparisonArrow: {
+    paddingHorizontal: 10,
+  },
+  arrowText: {
+    fontSize: 20,
+    color: '#64748b',
+  },
+  confidenceBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  confidenceText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  metricsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  metricItem: {
+    width: '48%',
+    marginBottom: 10,
+    backgroundColor: '#f1f5f9',
+    padding: 8,
+    borderRadius: 6,
+  },
+  metricLabel: {
+    fontSize: 10,
+    color: '#64748b',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  metricValues: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  metricPredicted: {
+    fontSize: 14,
+    color: '#8b5cf6',
+    fontWeight: '600',
+  },
+  metricArrow: {
+    fontSize: 12,
+    color: '#94a3b8',
+  },
+  metricActual: {
+    fontSize: 14,
+    color: '#10b981',
+    fontWeight: '600',
+  },
+  insightsCard: {
+    backgroundColor: '#e0f2fe',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 20,
+    borderRadius: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#0284c7',
+  },
+  insightsTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#0369a1',
+    marginBottom: 15,
+  },
+  insightItem: {
+    marginBottom: 10,
+  },
+  insightText: {
+    fontSize: 15,
+    color: '#0369a1',
+    lineHeight: 22,
+  },
+  footer: {
+    padding: 20,
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    marginTop: 10,
+  },
+  footerText: {
+    fontSize: 14,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  footerSubtext: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginTop: 4,
+  },
+});

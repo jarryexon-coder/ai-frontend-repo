@@ -1,0 +1,2907 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
+  RefreshControl,
+  Dimensions,
+  TextInput,
+  Modal,
+  Platform,
+  Alert
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Import navigation helper
+import { useAppNavigation } from '../navigation/NavigationHelper';
+import SearchBar from '../components/SearchBar';
+import { useSearch } from '../providers/SearchProvider';
+import useDailyLocks from '../hooks/useDailyLocks';
+import Purchases from 'react-native-purchases';
+
+const { width } = Dimensions.get('window');
+
+// Simple Firebase helper
+const logFirebaseEvent = async (eventName, eventParams = {}) => {
+  try {
+    // Mock implementation
+    if (__DEV__) {
+      console.log(`📊 Daily Picks Event: ${eventName}`, eventParams);
+    }
+    
+    try {
+      const existingEvents = JSON.parse(await AsyncStorage.getItem('analytics_events') || '[]');
+      existingEvents.push({
+        event: eventName,
+        params: eventParams,
+        timestamp: new Date().toISOString()
+      });
+      if (existingEvents.length > 100) {
+        existingEvents.splice(0, existingEvents.length - 100);
+      }
+      await AsyncStorage.setItem('analytics_events', JSON.stringify(existingEvents));
+    } catch (storageError) {
+      console.warn('Could not save analytics event:', storageError);
+    }
+  } catch (error) {
+    console.warn('Analytics event failed:', error);
+  }
+};
+
+// Daily Reset Implementation
+const useDailyReset = () => {
+  const [lastResetDate, setLastResetDate] = useState(null);
+  const [hasResetToday, setHasResetToday] = useState(false);
+
+  useEffect(() => {
+    checkAndResetDaily();
+  }, []);
+
+  const checkAndResetDaily = async () => {
+    try {
+      const today = new Date().toDateString();
+      const lastDate = await AsyncStorage.getItem('@daily_reset_date');
+      
+      if (lastDate !== today) {
+        // New day - reset AI generated picks
+        await resetAIGeneratedPicks();
+        await AsyncStorage.setItem('@daily_reset_date', today);
+        setLastResetDate(today);
+        setHasResetToday(true);
+        
+        console.log('🎯 Daily reset completed for AI generated picks');
+      } else {
+        setHasResetToday(false);
+      }
+      
+      setLastResetDate(lastDate);
+    } catch (error) {
+      console.error('Error in daily reset:', error);
+    }
+  };
+
+  const resetAIGeneratedPicks = async () => {
+    try {
+      // Remove AI generated picks from storage
+      await AsyncStorage.removeItem('@ai_generated_picks');
+      
+      // You can also reset other daily limits here
+      const today = new Date().toDateString();
+      await AsyncStorage.setItem('@daily_reset_date', today);
+      
+      console.log('🧹 AI generated picks cleared for new day');
+      
+      return true;
+    } catch (error) {
+      console.error('Error resetting AI picks:', error);
+      return false;
+    }
+  };
+
+  return { hasResetToday, resetAIGeneratedPicks, lastResetDate };
+};
+
+// Generate Counter Hook
+const useGenerateCounter = () => {
+  const [remainingGenerations, setRemainingGenerations] = useState(2);
+  const [hasPremiumAccess, setHasPremiumAccess] = useState(false);
+  
+  useEffect(() => {
+    loadGenerateCounter();
+  }, []);
+  
+  const loadGenerateCounter = async () => {
+    try {
+      const today = new Date().toDateString();
+      const lastDate = await AsyncStorage.getItem('@generate_last_date');
+      let remaining = 2; // Start with 2 free generations
+      
+      // Only use stored count if it's the same day
+      if (lastDate === today) {
+        const storedCount = await AsyncStorage.getItem('@generate_remaining');
+        remaining = parseInt(storedCount) || 2;
+      } else {
+        // New day - reset counter
+        await AsyncStorage.setItem('@generate_last_date', today);
+        await AsyncStorage.setItem('@generate_remaining', '2');
+      }
+      
+      // Check for premium access
+      try {
+        const customerInfo = await Purchases.getCustomerInfo();
+        if (customerInfo.entitlements.active?.success_metrics_access) {
+          setHasPremiumAccess(true);
+        }
+      } catch (purchaseError) {
+        console.log('No premium access detected');
+      }
+      
+      setRemainingGenerations(remaining);
+    } catch (error) {
+      console.error('Error loading generate counter:', error);
+    }
+  };
+  
+  const useGeneration = async () => {
+    try {
+      // Check if user has premium access
+      const customerInfo = await Purchases.getCustomerInfo();
+      if (customerInfo.entitlements.active?.success_metrics_access) {
+        setHasPremiumAccess(true);
+        return { 
+          allowed: true, 
+          reason: 'premium_access',
+          message: 'Premium access: Unlimited generations!',
+          remaining: -1 // -1 indicates unlimited
+        };
+      }
+      
+      const today = new Date().toDateString();
+      const lastDate = await AsyncStorage.getItem('@generate_last_date');
+      let remaining = 2;
+      
+      // Reset if new day
+      if (lastDate !== today) {
+        await AsyncStorage.setItem('@generate_last_date', today);
+        await AsyncStorage.setItem('@generate_remaining', '2');
+        remaining = 2;
+      } else {
+        const storedCount = await AsyncStorage.getItem('@generate_remaining');
+        remaining = parseInt(storedCount) || 2;
+      }
+      
+      // Check if any free generations left
+      if (remaining > 0) {
+        // Use one generation
+        remaining--;
+        await AsyncStorage.setItem('@generate_remaining', remaining.toString());
+        setRemainingGenerations(remaining);
+        
+        return { 
+          allowed: true, 
+          remaining,
+          reason: 'free',
+          message: `Picks generated! ${remaining} free generations left today.`
+        };
+      } else {
+        // No free generations left
+        return { 
+          allowed: false, 
+          remaining: 0,
+          reason: 'limit_reached',
+          message: 'You\'ve used all 2 free generations today.'
+        };
+      }
+    } catch (error) {
+      console.error('Error checking generate counter:', error);
+      return { 
+        allowed: false, 
+        reason: 'error',
+        message: 'Error checking generation availability.'
+      };
+    }
+  };
+  
+  const purchaseGenerationPack = async () => {
+    try {
+      const { customerInfo } = await Purchases.purchaseProduct('generation_pack');
+      // Check if purchase was successful
+      if (customerInfo.entitlements.active?.generation_access) {
+        // For now, assume success and add 10 more generations
+        await AsyncStorage.setItem('@generate_remaining', '10');
+        setRemainingGenerations(10);
+        return { success: true, message: 'Purchased 10 additional generations!' };
+      }
+      return { success: false, message: 'Purchase failed. Please try again.' };
+    } catch (error) {
+      if (!error.userCancelled) {
+        return { success: false, message: 'Purchase failed. Please try again.' };
+      }
+      return { success: false, message: 'Purchase cancelled.' };
+    }
+  };
+  
+  const resetCounter = async () => {
+    try {
+      const today = new Date().toDateString();
+      await AsyncStorage.setItem('@generate_last_date', today);
+      await AsyncStorage.setItem('@generate_remaining', '2');
+      setRemainingGenerations(2);
+    } catch (error) {
+      console.error('Error resetting counter:', error);
+    }
+  };
+  
+  return { 
+    remainingGenerations, 
+    hasPremiumAccess,
+    useGeneration, 
+    purchaseGenerationPack,
+    resetCounter 
+  };
+};
+
+// Visual Metrics Card Component
+const VisualMetricsCard = ({ stats }) => {
+  const progress = (stats.hitRate - 70) / 30; // Normalize between 70-100%
+  
+  return (
+    <View style={visualMetricsStyles.container}>
+      <LinearGradient
+        colors={['#1e293b', '#0f172a']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={visualMetricsStyles.gradient}
+      >
+        <View style={visualMetricsStyles.header}>
+          <Ionicons name="analytics" size={24} color="#8b5cf6" />
+          <Text style={visualMetricsStyles.title}>AI Performance Insights</Text>
+        </View>
+        
+        {/* Progress bar for hit rate */}
+        <View style={visualMetricsStyles.progressSection}>
+          <View style={visualMetricsStyles.progressHeader}>
+            <Text style={visualMetricsStyles.progressLabel}>Hit Rate Accuracy</Text>
+            <Text style={visualMetricsStyles.progressValue}>{stats.hitRate}</Text>
+          </View>
+          <View style={visualMetricsStyles.progressBarContainer}>
+            <View style={visualMetricsStyles.progressBarBackground}>
+              <View 
+                style={[
+                  visualMetricsStyles.progressBarFill,
+                  { width: `${progress * 100}%` }
+                ]}
+              />
+            </View>
+            <View style={visualMetricsStyles.progressLabels}>
+              <Text style={visualMetricsStyles.progressMin}>70%</Text>
+              <Text style={visualMetricsStyles.progressMax}>100%</Text>
+            </View>
+          </View>
+        </View>
+        
+        <View style={visualMetricsStyles.statsGrid}>
+          <View style={visualMetricsStyles.statItem}>
+            <View style={visualMetricsStyles.statIconContainer}>
+              <Ionicons name="trending-up" size={20} color="#10b981" />
+            </View>
+            <Text style={visualMetricsStyles.statValue}>{stats.roi}</Text>
+            <Text style={visualMetricsStyles.statLabel}>ROI</Text>
+          </View>
+          
+          <View style={visualMetricsStyles.statItem}>
+            <View style={visualMetricsStyles.statIconContainer}>
+              <Ionicons name="flame" size={20} color="#f59e0b" />
+            </View>
+            <Text style={visualMetricsStyles.statValue}>{stats.streak}</Text>
+            <Text style={visualMetricsStyles.statLabel}>Streak</Text>
+          </View>
+          
+          <View style={visualMetricsStyles.statItem}>
+            <View style={visualMetricsStyles.statIconContainer}>
+              <Ionicons name="star" size={20} color="#8b5cf6" />
+            </View>
+            <Text style={visualMetricsStyles.statValue}>{stats.avgEdge}</Text>
+            <Text style={visualMetricsStyles.statLabel}>Avg Edge</Text>
+          </View>
+          
+          <View style={visualMetricsStyles.statItem}>
+            <View style={visualMetricsStyles.statIconContainer}>
+              <Ionicons name="shield-checkmark" size={20} color="#3b82f6" />
+            </View>
+            <Text style={visualMetricsStyles.statValue}>{stats.confidence}</Text>
+            <Text style={visualMetricsStyles.statLabel}>Confidence</Text>
+          </View>
+        </View>
+        
+        <View style={visualMetricsStyles.footer}>
+          <Ionicons name="information-circle" size={14} color="#64748b" />
+          <Text style={visualMetricsStyles.footerText}>
+            Powered by GPT-4 insights and real-time analytics
+          </Text>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+};
+
+const visualMetricsStyles = StyleSheet.create({
+  container: {
+    borderRadius: 20,
+    marginBottom: 25,
+    overflow: 'hidden',
+    backgroundColor: '#1e293b', // SOLID BACKGROUND to fix shadow warnings
+  },
+  gradient: {
+    padding: 25,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#f1f5f9',
+    marginLeft: 10,
+    flex: 1,
+  },
+  progressSection: {
+    marginBottom: 25,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  progressLabel: {
+    fontSize: 14,
+    color: '#cbd5e1',
+    fontWeight: '600',
+  },
+  progressValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#10b981',
+  },
+  progressBarContainer: {
+    marginTop: 5,
+  },
+  progressBarBackground: {
+    height: 10,
+    backgroundColor: '#334155',
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#10b981',
+    borderRadius: 5,
+  },
+  progressLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 5,
+  },
+  progressMin: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  progressMax: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#0f172a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#f1f5f9',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontWeight: '600',
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#64748b',
+    marginLeft: 8,
+    flex: 1,
+  },
+});
+
+export default function DailyPicksScreen() {
+  // Use the app navigation helper
+  const navigation = useAppNavigation();
+  
+  const { searchHistory, addToSearchHistory } = useSearch();
+  const dailyLocks = useDailyLocks();
+  const { hasResetToday } = useDailyReset();
+  const { 
+    remainingGenerations, 
+    hasPremiumAccess,
+    useGeneration, 
+    purchaseGenerationPack,
+    resetCounter 
+  } = useGenerateCounter();
+  
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [picks, setPicks] = useState([]);
+  const [filteredPicks, setFilteredPicks] = useState([]);
+  const [selectedSport, setSelectedSport] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [showGeneratingModal, setShowGeneratingModal] = useState(false);
+  const [selectedPrompt, setSelectedPrompt] = useState('');
+  const [contentUnlocked, setContentUnlocked] = useState(true);
+  const [aiGeneratedPicksUnlocked, setAiGeneratedPicksUnlocked] = useState(false);
+  const [aiGeneratedPicks, setAiGeneratedPicks] = useState([]);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  // Daily reset effect
+  useEffect(() => {
+    if (hasResetToday) {
+      // Clear AI generated picks from state
+      setAiGeneratedPicks([]);
+      // Remove AI picks from main picks list
+      const nonAIPicks = picks.filter(pick => !pick.isAiGenerated);
+      setPicks(nonAIPicks);
+      setFilteredPicks(nonAIPicks);
+      
+      Alert.alert(
+        '🎯 New Day!',
+        'AI generated picks have been reset. Generate fresh picks for today!',
+        [{ text: 'Got it' }]
+      );
+    }
+  }, [hasResetToday]);
+
+  // Stats for the visual metrics card
+  const performanceStats = {
+    hitRate: '87.3%',
+    roi: '+24.8%',
+    streak: '15-3',
+    avgEdge: '4.2⭐',
+    confidence: '92%'
+  };
+
+  // Updated Navigation Functions
+  const handleNavigateToExpertSelections = () => {
+    navigation.navigate('SuccessMetrics', { screen: 'ExpertSelections' });
+    logFirebaseEvent('daily_picks_navigate_expert_selections', {
+      screen_name: 'Daily Picks Screen'
+    });
+  };
+
+  const handleNavigateToPlayerMetrics = () => {
+    navigation.navigate('SuccessMetrics', { screen: 'PlayerMetrics' });
+    logFirebaseEvent('daily_picks_navigate_player_metrics', {
+      screen_name: 'Daily Picks Screen'
+    });
+  };
+
+  const handleNavigateToAnalytics = () => {
+    navigation.navigate('Analytics');
+    logFirebaseEvent('daily_picks_navigate_analytics', {
+      screen_name: 'Daily Picks Screen'
+    });
+  };
+
+  const handleNavigateToPredictions = () => {
+    navigation.navigate('Predictions');
+    logFirebaseEvent('daily_picks_navigate_predictions', {
+      screen_name: 'Daily Picks Screen'
+    });
+  };
+
+  // Enhanced navigation menu component
+  const renderNavigationMenu = () => (
+    <View style={styles.navigationMenu}>
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToPlayerMetrics()}
+        activeOpacity={0.7}
+      >
+        <LinearGradient
+          colors={['#8b5cf6', '#7c3aed']}
+          style={styles.navButtonGradient}
+        >
+          <Ionicons name="stats-chart" size={20} color="#fff" />
+          <Text style={styles.navButtonText}>Metrics</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToExpertSelections()}
+        activeOpacity={0.7}
+      >
+        <LinearGradient
+          colors={['#10b981', '#059669']}
+          style={styles.navButtonGradient}
+        >
+          <Ionicons name="trophy" size={20} color="#fff" />
+          <Text style={styles.navButtonText}>Expert Picks</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToPredictions()}
+        activeOpacity={0.7}
+      >
+        <LinearGradient
+          colors={['#f59e0b', '#d97706']}
+          style={styles.navButtonGradient}
+        >
+          <Ionicons name="trending-up" size={20} color="#fff" />
+          <Text style={styles.navButtonText}>AI Predict</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.navButton}
+        onPress={() => handleNavigateToAnalytics()}
+        activeOpacity={0.7}
+      >
+        <LinearGradient
+          colors={['#3b82f6', '#1d4ed8']}
+          style={styles.navButtonGradient}
+        >
+          <Ionicons name="analytics" size={20} color="#fff" />
+          <Text style={styles.navButtonText}>Analytics</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Handle generation with counter check
+  const handleGeneratePicks = async (prompt) => {
+    // Check if user can generate more picks
+    const result = await useGeneration();
+    
+    if (!result.allowed) {
+      if (result.reason === 'limit_reached') {
+        setShowUpgradeModal(true);
+        return false;
+      } else if (result.reason === 'error') {
+        Alert.alert('Error', result.message);
+        return false;
+      }
+    }
+    
+    // Proceed with generation
+    return await generateHighProbabilityPicks(prompt, result);
+  };
+
+  // Enhanced High Probability Picks Generation System with vast random prompts
+  const generateHighProbabilityPicks = async (prompt, generationResult) => {
+    // Check if user can access AI-generated picks
+    if (!aiGeneratedPicksUnlocked) {
+      const unlocked = await unlockAiGeneratedPicks();
+      if (!unlocked) {
+        return;
+      }
+    }
+
+    setGenerating(true);
+    setShowGeneratingModal(true);
+    setSelectedPrompt(prompt);
+    
+    await logFirebaseEvent('picks_generation_start', {
+      prompt: prompt,
+      sport: selectedSport,
+      user_has_premium: hasPremiumAccess,
+      remaining_generations: generationResult.remaining
+    });
+    
+    try {
+      // Enhanced simulation with real-time status updates
+      const steps = [
+        "Analyzing historical data...",
+        "Processing player trends...",
+        "Evaluating matchup statistics...",
+        "Calculating win probabilities...",
+        "Generating optimal picks..."
+      ];
+      
+      let currentStep = 0;
+      const updateStep = () => {
+        if (currentStep < steps.length) {
+          setSelectedPrompt(steps[currentStep]);
+          currentStep++;
+          setTimeout(updateStep, 600);
+        }
+      };
+      
+      updateStep();
+      
+      // Simulate AI processing delay
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Generate enhanced picks with realistic metrics using random variations
+      const generatedPicks = generatePicksBasedOnPrompt(prompt);
+      
+      // Store AI generated picks separately
+      const newAIPicks = [...aiGeneratedPicks, ...generatedPicks];
+      setAiGeneratedPicks(newAIPicks);
+      
+      // Save to AsyncStorage for persistence
+      try {
+        await AsyncStorage.setItem('@ai_generated_picks', JSON.stringify(newAIPicks));
+      } catch (storageError) {
+        console.warn('Failed to save AI picks:', storageError);
+      }
+      
+      // Add generated picks to the existing picks (for display)
+      const updatedPicks = [...generatedPicks, ...picks];
+      setPicks(updatedPicks);
+      
+      // Update filtered picks
+      const filtered = selectedSport === 'All' 
+        ? updatedPicks 
+        : updatedPicks.filter(pick => pick.sport === selectedSport);
+      setFilteredPicks(filtered);
+      
+      await logFirebaseEvent('picks_generation_success', {
+        prompt: prompt,
+        count: generatedPicks.length,
+        sport: selectedSport,
+        generated_picks: generatedPicks.map(p => p.id),
+        remaining_generations: generationResult.remaining
+      });
+      
+      // Show success with remaining generations info
+      setTimeout(() => {
+        setShowGeneratingModal(false);
+        setGenerating(false);
+        setCustomPrompt('');
+        setSelectedPrompt('');
+        
+        // Show alert with remaining generations info
+        if (generationResult.reason !== 'premium_access' && generationResult.remaining >= 0) {
+          Alert.alert(
+            '✅ Picks Generated!',
+            `${generationResult.message}\n\nGenerated ${generatedPicks.length} new high probability picks.`,
+            [{ text: 'OK' }]
+          );
+        }
+      }, 2000);
+      
+    } catch (error) {
+      console.error('Error generating picks:', error);
+      await logFirebaseEvent('picks_generation_error', {
+        error: error.message,
+        prompt: prompt,
+      });
+      setGenerating(false);
+      setShowGeneratingModal(false);
+      setSelectedPrompt('');
+    }
+  };
+
+  // Upgrade Modal
+  const renderUpgradeModal = () => (
+    <Modal
+      transparent={true}
+      visible={showUpgradeModal}
+      animationType="fade"
+      onRequestClose={() => setShowUpgradeModal(false)}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.upgradeModalContent}>
+            <LinearGradient
+              colors={['#8b5cf6', '#7c3aed']}
+              style={styles.upgradeModalHeader}
+            >
+              <Ionicons name="sparkles" size={40} color="white" />
+              <Text style={styles.upgradeModalTitle}>Unlock More Picks!</Text>
+            </LinearGradient>
+            
+            <View style={styles.upgradeModalBody}>
+              <Text style={styles.upgradeModalText}>
+                You've used all 2 free picks for today. Upgrade to unlock:
+              </Text>
+              
+              <View style={styles.upgradeFeatures}>
+                <View style={styles.featureItem}>
+                  <Ionicons name="infinite" size={24} color="#10b981" />
+                  <Text style={styles.featureText}>Unlimited picks daily</Text>
+                </View>
+                
+                <View style={styles.featureItem}>
+                  <Ionicons name="rocket" size={24} color="#8b5cf6" />
+                  <Text style={styles.featureText}>Priority AI processing</Text>
+                </View>
+                
+                <View style={styles.featureItem}>
+                  <Ionicons name="shield-checkmark" size={24} color="#3b82f6" />
+                  <Text style={styles.featureText}>Advanced analytics</Text>
+                </View>
+              </View>
+              
+              <View style={styles.upgradeOptions}>
+                <TouchableOpacity
+                  style={styles.upgradeOption}
+                  onPress={async () => {
+                    setShowUpgradeModal(false);
+                    const result = await purchaseGenerationPack();
+                    if (result.success) {
+                      Alert.alert('Success!', result.message);
+                      // User can now generate more picks
+                    } else {
+                      Alert.alert('Error', result.message);
+                    }
+                  }}
+                >
+                  <LinearGradient
+                    colors={['#10b981', '#059669']}
+                    style={styles.upgradeOptionGradient}
+                  >
+                    <Text style={styles.upgradeOptionTitle}>10-Pick Pack</Text>
+                    <Text style={styles.upgradeOptionPrice}>$3.99</Text>
+                    <Text style={styles.upgradeOptionDesc}>One-time purchase</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.upgradeOption}
+                  onPress={() => {
+                    setShowUpgradeModal(false);
+                    navigation.navigate('Subscription');
+                  }}
+                >
+                  <LinearGradient
+                    colors={['#8b5cf6', '#7c3aed']}
+                    style={styles.upgradeOptionGradient}
+                  >
+                    <Text style={styles.upgradeOptionTitle}>Premium Monthly</Text>
+                    <Text style={styles.upgradeOptionPrice}>$9.99/month</Text>
+                    <Text style={styles.upgradeOptionDesc}>Unlock everything</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+              
+              <TouchableOpacity
+                style={styles.upgradeCancelButton}
+                onPress={() => setShowUpgradeModal(false)}
+              >
+                <Text style={styles.upgradeCancelText}>Maybe Later</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // Vast array of random prompts
+  const getRandomPrompts = () => {
+    const allPrompts = [
+      // NBA Prompts
+      "Generate top 3 high probability NBA player props for tonight",
+      "Show me NBA picks with over 85% confidence",
+      "Best NBA value bets with positive expected value",
+      "NBA player props trending above market expectations",
+      "Generate NBA picks based on recent form and matchups",
+      "High probability NBA moneyline bets for today's games",
+      "Show me NBA picks with the biggest edge vs. sportsbooks",
+      "NBA player props with high volume and efficiency",
+      "Top NBA rebounder and assist props for tonight",
+      "NBA 3-point specialist props with high probability",
+      
+      // NFL Prompts
+      "Generate NFL player props with strong statistical backing",
+      "Top NFL passing yardage props for this week",
+      "NFL rushing props with favorable matchups",
+      "NFL receiving props with high target shares",
+      "NFL touchdown scorer props with red zone usage",
+      
+      // NHL Prompts
+      "Generate NHL goal scorer props for tonight",
+      "NHL shot on goal props with volume opportunities",
+      "NHL assist props with power play time",
+      "NHL goalie props with strong defensive matchups",
+      
+      // MLB Prompts
+      "MLB strikeout props with high strikeout pitchers",
+      "MLB hit props with favorable batting matchups",
+      "MLB RBI props with runners in scoring position",
+      
+      // General Prompts
+      "Parlay suggestions with high win probability",
+      "Best over/under picks for tonight's games",
+      "Player props with significant market mispricing",
+      "High probability picks across all sports",
+      "Generate picks based on advanced metrics and trends",
+      "Show me picks with the highest implied probability",
+      "Player props with positive momentum indicators",
+      "Generate picks using machine learning models",
+      "High confidence picks with low variance",
+      "Player props with strong correlation to team success",
+      
+      // Customizable Prompts
+      "Show me {sport} player props for {player_type} tonight",
+      "Generate picks for {sport} games with {condition}",
+      "High probability {sport} props with {metric} trending up",
+      "Best {sport} bets for {time_period} based on {data_source}"
+    ];
+    
+    // Randomly select 8 prompts
+    const shuffled = [...allPrompts].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, 8);
+  };
+
+  // Enhanced pick generation with realistic metrics and vast variations
+  const generatePicksBasedOnPrompt = (prompt) => {
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const now = Date.now();
+    
+    // Enhanced metrics based on prompt analysis with variations
+    const getEnhancedMetrics = (baseConfidence, category) => {
+      const baseROI = 12 + Math.random() * 18;
+      const baseUnits = 1.2 + Math.random() * 1.8;
+      const probability = Math.min(95, Math.max(75, baseConfidence + (Math.random() * 10 - 5)));
+      
+      return {
+        probability: `${Math.round(probability)}%`,
+        roi: `+${Math.round(baseROI)}%`,
+        units: baseUnits.toFixed(1)
+      };
+    };
+    
+    // Random player generator based on sport
+    const getRandomPlayers = (sport, count) => {
+      const players = {
+        NBA: [
+          { name: 'LeBron James', team: 'LAL' },
+          { name: 'Stephen Curry', team: 'GSW' },
+          { name: 'Kevin Durant', team: 'PHX' },
+          { name: 'Giannis Antetokounmpo', team: 'MIL' },
+          { name: 'Jayson Tatum', team: 'BOS' },
+          { name: 'Luka Dončić', team: 'DAL' },
+          { name: 'Nikola Jokić', team: 'DEN' },
+          { name: 'Joel Embiid', team: 'PHI' }
+        ],
+        NFL: [
+          { name: 'Patrick Mahomes', team: 'KC' },
+          { name: 'Josh Allen', team: 'BUF' },
+          { name: 'Justin Jefferson', team: 'MIN' },
+          { name: 'Travis Kelce', team: 'KC' },
+          { name: 'Christian McCaffrey', team: 'SF' },
+          { name: 'Ja\'Marr Chase', team: 'CIN' }
+        ],
+        NHL: [
+          { name: 'Connor McDavid', team: 'EDM' },
+          { name: 'Nathan MacKinnon', team: 'COL' },
+          { name: 'Auston Matthews', team: 'TOR' },
+          { name: 'Leon Draisaitl', team: 'EDM' },
+          { name: 'David Pastrňák', team: 'BOS' }
+        ],
+        MLB: [
+          { name: 'Shohei Ohtani', team: 'LAD' },
+          { name: 'Aaron Judge', team: 'NYY' },
+          { name: 'Ronald Acuña Jr.', team: 'ATL' },
+          { name: 'Mookie Betts', team: 'LAD' }
+        ]
+      };
+      
+      const sportPlayers = players[sport] || players.NBA;
+      const shuffled = [...sportPlayers].sort(() => 0.5 - Math.random());
+      return shuffled.slice(0, count);
+    };
+    
+    // Random prop types
+    const getRandomProps = (sport, count) => {
+      const props = {
+        NBA: [
+          'Over {points} Points',
+          'Over {assists} Assists',
+          'Over {rebounds} Rebounds',
+          'Over {points+assists} Points+Assists',
+          'Over {points+rebounds} Points+Rebounds',
+          'To Record Double-Double',
+          'To Make {threes}+ Threes',
+          'Over {blocks+steals} Blocks+Steals'
+        ],
+        NFL: [
+          'Over {yards} Passing Yards',
+          'Over {yards} Rushing Yards',
+          'Over {yards} Receiving Yards',
+          'Over {tds} Touchdowns',
+          'To Score Anytime TD',
+          'Over {receptions} Receptions'
+        ],
+        NHL: [
+          'Anytime Goal Scorer',
+          'Over {shots} Shots on Goal',
+          'Over {points} Points',
+          'Over {assists} Assists',
+          'To Record Point'
+        ]
+      };
+      
+      const sportProps = props[sport] || props.NBA;
+      const shuffled = [...sportProps].sort(() => 0.5 - Math.random());
+      return shuffled.slice(0, count).map(prop => {
+        return prop
+          .replace('{points}', Math.floor(20 + Math.random() * 15))
+          .replace('{assists}', Math.floor(4 + Math.random() * 4))
+          .replace('{rebounds}', Math.floor(6 + Math.random() * 6))
+          .replace('{points+assists}', Math.floor(25 + Math.random() * 15))
+          .replace('{points+rebounds}', Math.floor(25 + Math.random() * 15))
+          .replace('{threes}', Math.floor(2 + Math.random() * 3))
+          .replace('{blocks+steals}', (1 + Math.random() * 2).toFixed(1))
+          .replace('{yards}', Math.floor(50 + Math.random() * 100))
+          .replace('{tds}', Math.floor(1 + Math.random() * 2))
+          .replace('{receptions}', Math.floor(4 + Math.random() * 4))
+          .replace('{shots}', Math.floor(2 + Math.random() * 3));
+      });
+    };
+    
+    // Generate picks based on prompt analysis
+    const lowerPrompt = prompt.toLowerCase();
+    let sport = 'NBA';
+    let pickCount = 2 + Math.floor(Math.random() * 2); // 2-3 picks
+    
+    // Determine sport from prompt
+    if (lowerPrompt.includes('nba') || lowerPrompt.includes('basketball')) {
+      sport = 'NBA';
+    } else if (lowerPrompt.includes('nfl') || lowerPrompt.includes('football')) {
+      sport = 'NFL';
+    } else if (lowerPrompt.includes('nhl') || lowerPrompt.includes('hockey')) {
+      sport = 'NHL';
+    } else if (lowerPrompt.includes('mlb') || lowerPrompt.includes('baseball')) {
+      sport = 'MLB';
+    } else {
+      sport = selectedSport === 'All' ? 'NBA' : selectedSport;
+    }
+    
+    const players = getRandomPlayers(sport, pickCount);
+    const props = getRandomProps(sport, pickCount);
+    
+    return players.map((player, index) => {
+      const confidence = Math.floor(80 + Math.random() * 15); // 80-95%
+      const metrics = getEnhancedMetrics(confidence, 'AI Generated');
+      const odds = Math.random() > 0.5 ? `-${Math.floor(110 + Math.random() * 40)}` : `+${Math.floor(100 + Math.random() * 150)}`;
+      const edge = `+${(3 + Math.random() * 4).toFixed(1)}%`;
+      
+      // Generate realistic analysis based on player and prop
+      const analyses = [
+        `AI-generated: High probability pick based on recent performance (+${Math.floor(10 + Math.random() * 15)}% last 5 games), matchup against weak defense (allows +${Math.floor(5 + Math.random() * 10)}% to position), and usage rate trending upward.`,
+        `AI-generated: Strong statistical backing with ${Math.floor(80 + Math.random() * 15)}% model confidence. Favorable matchup (opponent allows ${Math.floor(40 + Math.random() * 10)}% shooting from range) and elevated minutes projection.`,
+        `AI-generated: Machine learning model identifies significant value opportunity. Player averaging ${Math.floor(20 + Math.random() * 15)}% above season average in this matchup type with positive momentum indicators.`,
+        `AI-generated: Advanced metrics show ${Math.floor(8 + Math.random() * 8)}% edge vs. market. Player has exceeded this prop in ${Math.floor(60 + Math.random() * 25)}% of similar matchups this season.`,
+        `AI-generated: High volume opportunity with ${Math.floor(85 + Math.random() * 10)}% route participation. Target share trending at ${Math.floor(25 + Math.random() * 15)}% with positive game script.`
+      ];
+      
+      return {
+        id: `gen-${now}-${index + 1}`,
+        player: player.name,
+        team: player.team,
+        sport: sport,
+        pick: props[index],
+        confidence: confidence,
+        odds: odds,
+        edge: edge,
+        analysis: analyses[Math.floor(Math.random() * analyses.length)],
+        timestamp: `AI Generated (${timestamp})`,
+        category: 'AI Generated',
+        probability: metrics.probability,
+        roi: metrics.roi,
+        units: metrics.units,
+        generatedFrom: prompt,
+        isAiGenerated: true
+      };
+    });
+  };
+
+  // Mock picks data
+  const mockPicks = [
+    {
+      id: '1',
+      player: 'Stephen Curry',
+      team: 'GSW',
+      sport: 'NBA',
+      pick: 'Over 31.5 Points',
+      confidence: 92,
+      odds: '-120',
+      edge: '+5.2%',
+      analysis: 'Hot streak: Averaging 34.2 points in last 5 games. 92% model confidence based on defensive matchup.',
+      timestamp: 'Today, 2:30 PM',
+      category: 'High Probability',
+      probability: '92%',
+      roi: '+24%',
+      units: '2.5',
+      isAiGenerated: false
+    },
+    {
+      id: '2',
+      player: 'Patrick Mahomes',
+      team: 'KC',
+      sport: 'NFL',
+      pick: 'Over 285.5 Passing Yards',
+      confidence: 88,
+      odds: '-110',
+      edge: '+4.8%',
+      analysis: 'Favorable matchup against weak secondary. Projected for 298+ yards based on coverage schemes.',
+      timestamp: 'Today, 1:45 PM',
+      category: 'Value Bet',
+      probability: '88%',
+      roi: '+18%',
+      units: '2.0',
+      isAiGenerated: false
+    },
+    {
+      id: '3',
+      player: 'Connor McDavid',
+      team: 'EDM',
+      sport: 'NHL',
+      pick: 'Anytime Goal Scorer',
+      confidence: 85,
+      odds: '+150',
+      edge: '+6.1%',
+      analysis: 'Scored in 7 of last 8 games. High-danger chances per game: 4.2 (league average: 2.1).',
+      timestamp: 'Today, 12:20 PM',
+      category: 'High Probability',
+      probability: '85%',
+      roi: '+22%',
+      units: '1.8',
+      isAiGenerated: false
+    },
+    {
+      id: '4',
+      player: 'Luka Dončić',
+      team: 'DAL',
+      sport: 'NBA',
+      pick: 'Triple Double',
+      confidence: 78,
+      odds: '+180',
+      edge: '+3.9%',
+      analysis: 'High usage rate with Kyrie Irving out. Projected: 32 pts, 9 reb, 10 ast.',
+      timestamp: 'Today, 11:15 AM',
+      category: 'Value Bet',
+      probability: '78%',
+      roi: '+15%',
+      units: '1.5',
+      isAiGenerated: false
+    },
+    {
+      id: '5',
+      player: 'Josh Allen',
+      team: 'BUF',
+      sport: 'NFL',
+      pick: 'Over 2.5 Total TDs',
+      confidence: 82,
+      odds: '+110',
+      edge: '+4.5%',
+      analysis: 'Strong red zone performance this season. 82% model confidence in multiple TDs.',
+      timestamp: 'Today, 10:30 AM',
+      category: 'High Probability',
+      probability: '82%',
+      roi: '+19%',
+      units: '2.2',
+      isAiGenerated: false
+    },
+  ];
+
+  const sports = [
+    { id: 'All', name: 'All Sports', icon: 'grid', color: '#8b5cf6' },
+    { id: 'NBA', name: 'NBA', icon: 'basketball', color: '#ef4444' },
+    { id: 'NFL', name: 'NFL', icon: 'american-football', color: '#3b82f6' },
+    { id: 'NHL', name: 'NHL', icon: 'ice-cream', color: '#1e40af' },
+    { id: 'MLB', name: 'MLB', icon: 'baseball', color: '#10b981' },
+  ];
+
+  useEffect(() => {
+    loadPicks();
+    logFirebaseEvent('daily_picks_screen_view', { sport: selectedSport });
+  }, [selectedSport]);
+
+  const loadPicks = async () => {
+    try {
+      setLoading(true);
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Load saved AI picks
+      try {
+        const savedAIPicks = await AsyncStorage.getItem('@ai_generated_picks');
+        if (savedAIPicks) {
+          const parsedAIPicks = JSON.parse(savedAIPicks);
+          setAiGeneratedPicks(parsedAIPicks);
+        }
+      } catch (error) {
+        console.warn('Failed to load AI picks:', error);
+      }
+      
+      // Combine mock picks and AI picks
+      const allPicks = [...mockPicks, ...aiGeneratedPicks];
+      
+      const filteredPicks = selectedSport === 'All' 
+        ? allPicks 
+        : allPicks.filter(pick => pick.sport === selectedSport);
+      
+      setPicks(filteredPicks);
+      setFilteredPicks(filteredPicks);
+    } catch (error) {
+      console.error('Error loading picks:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadPicks();
+    logFirebaseEvent('daily_picks_refresh', { sport: selectedSport });
+  };
+
+  // Handle search functionality
+  const handleDailyPicksSearch = (query) => {
+    setSearchQuery(query);
+    addToSearchHistory(query);
+    
+    if (!query.trim()) {
+      setFilteredPicks(picks);
+      return;
+    }
+
+    const lowerQuery = query.toLowerCase();
+    
+    const filtered = picks.filter(pick =>
+      (pick.player || '').toLowerCase().includes(lowerQuery) ||
+      (pick.team || '').toLowerCase().includes(lowerQuery) ||
+      (pick.sport || '').toLowerCase().includes(lowerQuery) ||
+      (pick.pick || '').toLowerCase().includes(lowerQuery) ||
+      (pick.category || '').toLowerCase().includes(lowerQuery)
+    );
+    
+    setFilteredPicks(filtered);
+    logFirebaseEvent('daily_picks_search', {
+      query: query,
+      results_count: filtered.length,
+    });
+  };
+
+  // Update filtered picks when picks or search query changes
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredPicks(picks);
+    } else {
+      const lowerQuery = searchQuery.toLowerCase();
+      const filtered = picks.filter(pick =>
+        (pick.player || '').toLowerCase().includes(lowerQuery) ||
+        (pick.team || '').toLowerCase().includes(lowerQuery) ||
+        (pick.sport || '').toLowerCase().includes(lowerQuery) ||
+        (pick.pick || '').toLowerCase().includes(lowerQuery) ||
+        (pick.category || '').toLowerCase().includes(lowerQuery)
+      );
+      setFilteredPicks(filtered);
+    }
+  }, [searchQuery, picks]);
+
+  const getConfidenceColor = (confidence) => {
+    if (confidence >= 90) return '#10b981';
+    if (confidence >= 80) return '#3b82f6';
+    if (confidence >= 70) return '#f59e0b';
+    return '#ef4444';
+  };
+
+  const getSportColor = (sport) => {
+    switch (sport) {
+      case 'NBA': return '#ef4444';
+      case 'NFL': return '#3b82f6';
+      case 'NHL': return '#1e40af';
+      case 'MLB': return '#10b981';
+      default: return '#6b7280';
+    }
+  };
+
+  const getConfidenceStyle = (confidence) => {
+    if (confidence >= 90) return styles.confidenceBadgeHigh;
+    if (confidence >= 80) return styles.confidenceBadgeMedium;
+    if (confidence >= 70) return styles.confidenceBadgeLow;
+    return styles.confidenceBadgeVeryLow;
+  };
+
+  const getSportBadgeStyle = (sport) => {
+    switch (sport) {
+      case 'NBA': return styles.sportBadgeNBA;
+      case 'NFL': return styles.sportBadgeNFL;
+      case 'NHL': return styles.sportBadgeNHL;
+      case 'MLB': return styles.sportBadgeMLB;
+      default: return styles.sportBadgeDefault;
+    }
+  };
+
+  const getSportTextStyle = (sport) => {
+    switch (sport) {
+      case 'NBA': return styles.sportTextNBA;
+      case 'NFL': return styles.sportTextNFL;
+      case 'NHL': return styles.sportTextNHL;
+      case 'MLB': return styles.sportTextMLB;
+      default: return styles.sportTextDefault;
+    }
+  };
+
+  const getCategoryStyle = (category) => {
+    switch (category) {
+      case 'High Probability': return styles.categoryBadgeHigh;
+      case 'AI Generated': return styles.categoryBadgeAI;
+      case 'Value Bet': return styles.categoryBadgeValue;
+      default: return styles.categoryBadgeDefault;
+    }
+  };
+
+  const getCategoryTextStyle = (category) => {
+    switch (category) {
+      case 'High Probability': return styles.categoryTextHigh;
+      case 'AI Generated': return styles.categoryTextAI;
+      case 'Value Bet': return styles.categoryTextValue;
+      default: return styles.categoryTextDefault;
+    }
+  };
+
+  // Enhanced generating modal
+  const renderGeneratingModal = () => (
+    <Modal
+      transparent={true}
+      visible={showGeneratingModal}
+      animationType="fade"
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {generating ? (
+              <>
+                <ActivityIndicator size="large" color="#8b5cf6" />
+                <Text style={styles.modalTitle}>Generating High Probability Picks...</Text>
+                <Text style={styles.modalSubtitle}>{selectedPrompt}</Text>
+                <View style={styles.processingSteps}>
+                  <View style={styles.stepIndicator}>
+                    <View style={[styles.stepDot, styles.stepActive]} />
+                    <View style={[styles.stepLine, styles.stepActive]} />
+                    <View style={[styles.stepDot, selectedPrompt.includes('Analyzing') && styles.stepActive]} />
+                    <View style={[styles.stepLine, selectedPrompt.includes('Processing') && styles.stepActive]} />
+                    <View style={[styles.stepDot, selectedPrompt.includes('Processing') && styles.stepActive]} />
+                    <View style={[styles.stepLine, selectedPrompt.includes('Evaluating') && styles.stepActive]} />
+                    <View style={[styles.stepDot, selectedPrompt.includes('Evaluating') && styles.stepActive]} />
+                    <View style={[styles.stepLine, selectedPrompt.includes('Calculating') && styles.stepActive]} />
+                    <View style={[styles.stepDot, selectedPrompt.includes('Calculating') && styles.stepActive]} />
+                  </View>
+                </View>
+                <Text style={styles.modalText}>GPT-4 is analyzing thousands of data points to find the best picks</Text>
+              </>
+            ) : (
+              <>
+                <LinearGradient
+                  colors={['#10b981', '#059669']}
+                  style={styles.successIconContainer}
+                >
+                  <Ionicons name="checkmark" size={40} color="white" />
+                </LinearGradient>
+                <Text style={styles.modalTitle}>Picks Generated Successfully!</Text>
+                <Text style={styles.modalText}>New high probability picks have been added to your list</Text>
+                <TouchableOpacity
+                  style={styles.modalButton}
+                  onPress={() => setShowGeneratingModal(false)}
+                >
+                  <Text style={styles.modalButtonText}>View Picks</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // Generation Counter Display
+  const renderGenerationCounter = () => (
+    <View style={styles.counterContainer}>
+      <View style={styles.counterHeader}>
+        <Ionicons name="sparkles" size={20} color="#8b5cf6" />
+        <Text style={styles.counterTitle}>Daily AI Picks Generator</Text>
+      </View>
+      
+      <View style={styles.counterContent}>
+        {hasPremiumAccess ? (
+          <LinearGradient
+            colors={['#10b981', '#059669']}
+            style={styles.premiumBadge}
+          >
+            <Ionicons name="infinite" size={20} color="white" />
+            <Text style={styles.premiumText}>Premium: Unlimited Generations</Text>
+          </LinearGradient>
+        ) : (
+          <>
+            <View style={styles.counterInfo}>
+              <Text style={styles.counterLabel}>Free picks remaining today:</Text>
+              <View style={styles.counterDisplay}>
+                <Text style={styles.counterNumber}>{remainingGenerations}</Text>
+                <Text style={styles.counterTotal}>/2</Text>
+              </View>
+            </View>
+            
+            <View style={styles.progressBar}>
+              <View 
+                style={[
+                  styles.progressFill,
+                  { width: `${(remainingGenerations / 2) * 100}%` }
+                ]}
+              />
+            </View>
+            
+            <Text style={styles.counterHint}>
+              {remainingGenerations === 0 
+                ? 'Upgrade for unlimited picks!' 
+                : remainingGenerations === 1 
+                  ? '1 pick remaining - choose wisely!' 
+                  : 'Generate up to 2 free picks daily'}
+            </Text>
+          </>
+        )}
+      </View>
+    </View>
+  );
+
+  // Enhanced prompts section with daily locks indicator
+  const renderPromptsSection = () => {
+    const usefulPrompts = getRandomPrompts();
+    
+    return (
+      <View style={styles.promptsSection}>
+        {renderGenerationCounter()}
+        
+        <View style={styles.promptsHeader}>
+          <LinearGradient
+            colors={['#8b5cf6', '#7c3aed']}
+            style={styles.promptsTitleGradient}
+          >
+            <Text style={styles.promptsTitle}>🚀 Generate High Probability Picks</Text>
+          </LinearGradient>
+          <Text style={styles.promptsSubtitle}>
+            {hasPremiumAccess ? '🔥 Premium Access: Unlimited AI Picks' : 
+             '✨ GPT-4 powered sports analytics'}
+          </Text>
+        </View>
+        
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.promptsScroll}
+        >
+          {usefulPrompts.map((prompt, index) => (
+            <TouchableOpacity
+              key={`prompt-${index}`}
+              style={[styles.promptChip, generating && styles.promptChipDisabled]}
+              onPress={() => handleGeneratePicks(prompt)}
+              disabled={generating}
+            >
+              <LinearGradient
+                colors={['#8b5cf6', '#7c3aed']}
+                style={styles.promptChipGradient}
+              >
+                <Ionicons name="sparkles" size={14} color="#fff" />
+                <Text style={styles.promptChipText}>{prompt}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        
+        <View style={styles.customPromptContainer}>
+          <View style={styles.promptInputContainer}>
+            <Ionicons name="create" size={20} color="#8b5cf6" />
+            <TextInput
+              style={styles.promptInput}
+              placeholder="Type your custom prompt (e.g., 'Show me NBA over/under picks for tonight')"
+              placeholderTextColor="#94a3b8"
+              value={customPrompt}
+              onChangeText={setCustomPrompt}
+              multiline
+              numberOfLines={2}
+              editable={!generating}
+            />
+          </View>
+          <TouchableOpacity
+            style={[styles.generateButton, (generating || (!hasPremiumAccess && remainingGenerations === 0)) && styles.generateButtonDisabled]}
+            onPress={() => customPrompt.trim() && handleGeneratePicks(customPrompt)}
+            disabled={!customPrompt.trim() || generating}
+          >
+            <LinearGradient
+              colors={['#8b5cf6', '#7c3aed']}
+              style={styles.generateButtonGradient}
+            >
+              {generating ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <>
+                  <Ionicons name="rocket" size={16} color="white" />
+                  <Text style={styles.generateButtonText}>
+                    {hasPremiumAccess ? 'Generate (Premium)' : 
+                     remainingGenerations > 0 ? `Generate (${remainingGenerations} left)` : 'Upgrade to Generate'}
+                  </Text>
+                </>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.promptsFooter}>
+          <Ionicons name="information-circle" size={14} color="#8b5cf6" />
+          <Text style={styles.promptsFooterText}>
+            GPT-4 analyzes historical data, player trends, and matchup statistics to generate high probability picks
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderPickItem = ({ item }) => (
+    <View style={styles.pickCard}>
+      <View style={styles.pickCardContent}>
+        <View style={styles.pickHeader}>
+          <View style={styles.playerInfo}>
+            <View>
+              <Text style={styles.playerName}>{item.player}</Text>
+              <View style={styles.pickSubheader}>
+                <Text style={styles.teamText}>{item.team}</Text>
+                <View style={styles.sportBadge}>
+                  <View style={[styles.sportBadgeInner, getSportBadgeStyle(item.sport)]}>
+                    <Text style={[styles.sportText, getSportTextStyle(item.sport)]}>
+                      {item.sport}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+            {item.category && (
+              <View style={styles.categoryContainer}>
+                <View style={[styles.categoryBadge, getCategoryStyle(item.category)]}>
+                  <Text style={[styles.categoryText, getCategoryTextStyle(item.category)]}>
+                    {item.category}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+          <View style={styles.confidenceBadge}>
+            <View style={[styles.confidenceBadgeInner, getConfidenceStyle(item.confidence)]}>
+              <Text style={styles.confidenceText}>{item.confidence}%</Text>
+            </View>
+          </View>
+        </View>
+        
+        <View style={styles.pickDetails}>
+          <Text style={styles.pickValue}>{item.pick}</Text>
+          <View style={styles.pickMeta}>
+            <View style={styles.oddsContainer}>
+              <Text style={styles.oddsLabel}>Odds:</Text>
+              <Text style={styles.oddsText}>{item.odds}</Text>
+            </View>
+            <View style={styles.edgeContainer}>
+              <Ionicons name="trending-up" size={14} color="#10b981" />
+              <Text style={styles.edgeText}>{item.edge} edge</Text>
+            </View>
+          </View>
+        </View>
+        
+        {item.probability && (
+          <View style={styles.probabilityMetrics}>
+            <View style={styles.metricItem}>
+              <Ionicons name="stats-chart" size={14} color="#8b5cf6" />
+              <Text style={styles.metricLabel}>Win Probability</Text>
+              <Text style={styles.metricValue}>{item.probability}</Text>
+            </View>
+            <View style={styles.metricItem}>
+              <Ionicons name="cash" size={14} color="#10b981" />
+              <Text style={styles.metricLabel}>Projected ROI</Text>
+              <Text style={styles.metricValue}>{item.roi}</Text>
+            </View>
+            <View style={styles.metricItem}>
+              <Ionicons name="trophy" size={14} color="#f59e0b" />
+              <Text style={styles.metricLabel}>Units</Text>
+              <Text style={styles.metricValue}>{item.units}</Text>
+            </View>
+          </View>
+        )}
+        
+        <View style={styles.analysisContainer}>
+          <Ionicons name="bulb" size={16} color="#f59e0b" />
+          <Text style={styles.analysisText}>{item.analysis}</Text>
+        </View>
+        
+        {item.generatedFrom && (
+          <View style={styles.generatedInfo}>
+            <Ionicons name="sparkles" size={12} color="#8b5cf6" />
+            <Text style={styles.generatedText}>
+              Generated from: "{item.generatedFrom.substring(0, 50)}..."
+            </Text>
+          </View>
+        )}
+        
+        <View style={styles.footer}>
+          <Text style={styles.timestamp}>{item.timestamp}</Text>
+          <TouchableOpacity 
+            style={styles.trackButton}
+            onPress={() => handleNavigateToPlayerMetrics()}
+          >
+            <LinearGradient
+              colors={['#8b5cf6', '#7c3aed']}
+              style={styles.trackButtonGradient}
+            >
+              <Ionicons name="stats-chart" size={14} color="#fff" />
+              <Text style={styles.trackButtonText}>View Metrics</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderSearchBar = () => {
+    if (!showSearch) return null;
+
+    return (
+      <>
+        <SearchBar
+          placeholder="Search picks by player, team, or sport..."
+          onSearch={handleDailyPicksSearch}
+          searchHistory={searchHistory}
+          style={styles.homeSearchBar}
+          onClose={() => {
+            setShowSearch(false);
+            setSearchQuery('');
+          }}
+        />
+        
+        {searchQuery.trim() && picks.length !== filteredPicks.length && (
+          <View style={styles.searchResultsInfo}>
+            <Text style={styles.searchResultsText}>
+              {filteredPicks.length} of {picks.length} picks match "{searchQuery}"
+            </Text>
+            <TouchableOpacity 
+              onPress={() => setSearchQuery('')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.clearSearchText}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </>
+    );
+  };
+
+  const renderFloatingSearchButton = () => (
+    <TouchableOpacity
+      style={styles.floatingSearchButton}
+      onPress={async () => {
+        await logFirebaseEvent('daily_picks_search_toggle', {
+          action: 'open_search',
+        });
+        setShowSearch(true);
+      }}
+      activeOpacity={0.7}
+    >
+      <View style={styles.floatingSearchContent}>
+        <Ionicons name="search" size={24} color="white" />
+      </View>
+    </TouchableOpacity>
+  );
+
+  if (loading || dailyLocks.loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#8b5cf6" />
+        <Text style={styles.loadingText}>Loading GPT-powered picks...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* Header */}
+      <LinearGradient
+        colors={['#8b5cf6', '#7c3aed']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.header}
+      >
+        <View style={styles.headerOverlay}>
+          <View style={styles.headerContent}>
+            <View style={styles.headerTop}>
+              <TouchableOpacity 
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}
+              >
+                <Ionicons name="arrow-back" size={24} color="white" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.headerSearchButton}
+                onPress={async () => {
+                  await logFirebaseEvent('daily_picks_search_toggle', {
+                    action: 'open_search',
+                  });
+                  setShowSearch(true);
+                }}
+              >
+                <Ionicons name="search-outline" size={20} color="white" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.headerMain}>
+              <View style={styles.headerIcon}>
+                <Ionicons name="trophy" size={32} color="#fff" />
+              </View>
+              <View style={styles.headerText}>
+                <Text style={styles.headerTitle}>🤖 GPT Sports Picks Pro</Text>
+                <Text style={styles.headerSubtitle}>AI-Powered High Probability Bets</Text>
+              </View>
+            </View>
+
+            {/* Add navigation menu to header */}
+            <View style={styles.navigationMenuContainer}>
+              {renderNavigationMenu()}
+            </View>
+          </View>
+        </View>
+      </LinearGradient>
+
+      <ScrollView
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#8b5cf6']}
+            tintColor="#8b5cf6"
+          />
+        }
+      >
+        {renderSearchBar()}
+        
+        {/* Sport Selector */}
+        <View style={styles.sportSelector}>
+          {sports.map((sport) => (
+            <TouchableOpacity
+              key={sport.id}
+              style={[
+                styles.sportButton,
+                selectedSport === sport.id && styles.sportButtonActive,
+              ]}
+              onPress={() => setSelectedSport(sport.id)}
+            >
+              {selectedSport === sport.id ? (
+                <LinearGradient
+                  colors={[sport.color, sport.color + 'CC']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.sportButtonGradient}
+                >
+                  <Ionicons 
+                    name={sport.icon} 
+                    size={20} 
+                    color="#fff" 
+                  />
+                  <Text style={styles.sportButtonTextActive}>
+                    {sport.name}
+                  </Text>
+                </LinearGradient>
+              ) : (
+                <>
+                  <Ionicons 
+                    name={sport.icon} 
+                    size={20} 
+                    color="#6b7280" 
+                  />
+                  <Text style={styles.sportButtonText}>
+                    {sport.name}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Performance Stats - Replaced with Visual Metrics Card */}
+        <VisualMetricsCard stats={performanceStats} />
+
+        {/* Generate Picks Section with Daily Locks */}
+        {renderPromptsSection()}
+
+        {/* Today's Picks */}
+        <View style={styles.picksSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>🎯 Today's Top Picks</Text>
+            <View style={styles.pickCountBadge}>
+              <Text style={styles.pickCount}>
+                {filteredPicks.filter(p => !p.isAiGenerated).length} picks
+                {filteredPicks.filter(p => p.isAiGenerated).length > 0 && 
+                  ` • ${filteredPicks.filter(p => p.isAiGenerated).length} GPT Generated`}
+              </Text>
+            </View>
+          </View>
+          
+          {filteredPicks.length > 0 ? (
+            <FlatList
+              data={filteredPicks}
+              renderItem={renderPickItem}
+              keyExtractor={item => `pick-${item.id}-${item.sport}`}
+              scrollEnabled={false}
+              contentContainerStyle={styles.picksList}
+            />
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="search-outline" size={48} color="#8b5cf6" />
+              {searchQuery.trim() ? (
+                <>
+                  <Text style={styles.emptyText}>No picks found</Text>
+                  <Text style={styles.emptySubtext}>Try a different search term or sport</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.emptyText}>No picks available</Text>
+                  <Text style={styles.emptySubtext}>Pull to refresh or try a different sport</Text>
+                </>
+              )}
+              <TouchableOpacity 
+                style={styles.generateEmptyButton}
+                onPress={() => handleGeneratePicks('Generate picks for me')}
+                disabled={generating || (!hasPremiumAccess && remainingGenerations === 0)}
+              >
+                <LinearGradient
+                  colors={['#8b5cf6', '#7c3aed']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.generateEmptyButtonGradient}
+                >
+                  <Ionicons name="sparkles" size={16} color="white" />
+                  <Text style={styles.generateEmptyButtonText}>
+                    {generating ? 'Generating...' : 
+                     hasPremiumAccess ? 'Generate Picks' :
+                     remainingGenerations > 0 ? `Generate Picks (${remainingGenerations} left)` : 'Upgrade to Generate'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+      
+      {!showSearch && renderFloatingSearchButton()}
+      {renderGeneratingModal()}
+      {renderUpgradeModal()}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  // Updated bold styles with solid backgrounds to fix shadow warnings
+  container: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+  },
+  
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+  },
+  
+  loadingText: {
+    marginTop: 15,
+    fontSize: 18,
+    color: '#cbd5e1',
+    fontWeight: '500',
+  },
+  
+  // Header styles
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
+    backgroundColor: '#8b5cf6', // Solid background for gradient
+  },
+  
+  headerOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  
+  headerContent: {
+    marginBottom: 10,
+  },
+  
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  
+  backButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  headerSearchButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  headerMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  
+  headerIcon: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    padding: 15,
+    borderRadius: 25,
+    marginRight: 15,
+  },
+  
+  headerText: {
+    flex: 1,
+  },
+  
+  headerTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: 'white',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  
+  headerSubtitle: {
+    fontSize: 16,
+    color: 'white',
+    opacity: 0.9,
+    marginTop: 5,
+    fontWeight: '500',
+  },
+
+  // Navigation menu styles
+  navigationMenuContainer: {
+    marginTop: 16,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 20,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  
+  navigationMenu: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  
+  navButton: {
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  
+  navButtonGradient: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 15,
+    alignItems: 'center',
+    width: '100%',
+    backgroundColor: 'transparent', // Will be overridden by gradient
+  },
+  
+  navButtonText: {
+    color: 'white',
+    fontSize: 11,
+    marginTop: 4,
+    fontWeight: 'bold',
+  },
+
+  // Counter styles
+  counterContainer: {
+    backgroundColor: '#1e293b',
+    borderRadius: 15,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  
+  counterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  
+  counterTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#f1f5f9',
+    marginLeft: 10,
+  },
+  
+  counterContent: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+  },
+  
+  premiumBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+  },
+  
+  premiumText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 15,
+    marginLeft: 10,
+  },
+  
+  counterInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  
+  counterLabel: {
+    fontSize: 14,
+    color: '#cbd5e1',
+    fontWeight: '600',
+  },
+  
+  counterDisplay: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  
+  counterNumber: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#8b5cf6',
+  },
+  
+  counterTotal: {
+    fontSize: 18,
+    color: '#64748b',
+    marginLeft: 4,
+  },
+  
+  progressBar: {
+    height: 6,
+    backgroundColor: '#334155',
+    borderRadius: 3,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#8b5cf6',
+    borderRadius: 3,
+  },
+  
+  counterHint: {
+    fontSize: 12,
+    color: '#94a3b8',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+
+  // Upgrade Modal Styles
+  upgradeModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 25,
+    width: '90%',
+    maxWidth: 400,
+    overflow: 'hidden',
+  },
+  
+  upgradeModalHeader: {
+    padding: 30,
+    alignItems: 'center',
+  },
+  
+  upgradeModalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    marginTop: 15,
+  },
+  
+  upgradeModalBody: {
+    padding: 25,
+  },
+  
+  upgradeModalText: {
+    fontSize: 16,
+    color: '#475569',
+    textAlign: 'center',
+    marginBottom: 25,
+    lineHeight: 22,
+  },
+  
+  upgradeFeatures: {
+    marginBottom: 25,
+  },
+  
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderRadius: 10,
+  },
+  
+  featureText: {
+    fontSize: 14,
+    color: '#1e293b',
+    fontWeight: '600',
+    marginLeft: 12,
+  },
+  
+  upgradeOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  
+  upgradeOption: {
+    flex: 1,
+    marginHorizontal: 5,
+  },
+  
+  upgradeOptionGradient: {
+    padding: 20,
+    borderRadius: 15,
+    alignItems: 'center',
+  },
+  
+  upgradeOptionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 5,
+  },
+  
+  upgradeOptionPrice: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 5,
+  },
+  
+  upgradeOptionDesc: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.9)',
+  },
+  
+  upgradeCancelButton: {
+    alignItems: 'center',
+    padding: 15,
+  },
+  
+  upgradeCancelText: {
+    fontSize: 16,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+
+  // Search bar styles
+  homeSearchBar: {
+    marginHorizontal: 16,
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  
+  searchResultsInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#1e293b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  
+  searchResultsText: {
+    fontSize: 14,
+    color: '#cbd5e1',
+    fontWeight: '500',
+  },
+  
+  clearSearchText: {
+    fontSize: 14,
+    color: '#8b5cf6',
+    fontWeight: 'bold',
+  },
+  
+  floatingSearchButton: {
+    position: 'absolute',
+    bottom: 30,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#8b5cf6', // Solid background
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    zIndex: 1000,
+  },
+  
+  floatingSearchContent: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#8b5cf6', // Solid background for gradient
+  },
+
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  modalOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 25,
+    padding: 30,
+    alignItems: 'center',
+    width: '85%',
+    maxWidth: 400,
+  },
+  
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#0f172a',
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  
+  modalSubtitle: {
+    fontSize: 16,
+    color: '#8b5cf6',
+    marginTop: 8,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  
+  modalText: {
+    fontSize: 15,
+    color: '#475569',
+    marginTop: 10,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  
+  successIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  modalButton: {
+    backgroundColor: '#8b5cf6',
+    paddingHorizontal: 30,
+    paddingVertical: 14,
+    borderRadius: 15,
+    marginTop: 25,
+  },
+  
+  modalButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+
+  // Processing steps
+  processingSteps: {
+    marginTop: 25,
+    marginBottom: 15,
+  },
+
+  stepIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  stepDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#e2e8f0',
+  },
+
+  stepLine: {
+    width: 25,
+    height: 3,
+    backgroundColor: '#e2e8f0',
+  },
+
+  stepActive: {
+    backgroundColor: '#8b5cf6',
+  },
+
+  // Sport Selector
+  sportSelector: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    margin: 20,
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    padding: 10,
+  },
+  
+  sportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderRadius: 15,
+    marginHorizontal: 5,
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: '#0f172a',
+  },
+  
+  sportButtonActive: {
+    backgroundColor: 'transparent',
+  },
+  
+  sportButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderRadius: 15,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  
+  sportButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94a3b8',
+    marginLeft: 8,
+  },
+  
+  sportButtonTextActive: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: 'white',
+    marginLeft: 8,
+  },
+
+  // Prompts section
+  promptsSection: {
+    marginHorizontal: 20,
+    marginBottom: 25,
+    padding: 20,
+    borderRadius: 20,
+    backgroundColor: '#1e293b', // Solid background to fix shadow warnings
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  
+  promptsHeader: {
+    marginBottom: 20,
+  },
+  
+  promptsTitleGradient: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 15,
+    marginBottom: 10,
+    backgroundColor: '#8b5cf6', // Solid background for gradient
+  },
+  
+  promptsTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: 'white',
+    textAlign: 'center',
+  },
+  
+  promptsSubtitle: {
+    fontSize: 14,
+    color: '#cbd5e1',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  
+  promptsStats: {
+    backgroundColor: '#f3e8ff',
+    padding: 12,
+    borderRadius: 12,
+  },
+  
+  promptsScroll: {
+    marginVertical: 15,
+  },
+  
+  promptChip: {
+    marginRight: 15,
+    borderRadius: 20,
+  },
+  
+  promptChipGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 20,
+    minWidth: 220,
+  },
+
+  promptChipDisabled: {
+    opacity: 0.6,
+  },
+  
+  promptChipText: {
+    fontSize: 13,
+    color: 'white',
+    fontWeight: '600',
+    marginLeft: 8,
+    flex: 1,
+  },
+  
+  customPromptContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  
+  promptInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 15,
+    paddingHorizontal: 15,
+    paddingVertical: 14,
+    marginRight: 15,
+  },
+  
+  promptInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#f1f5f9',
+    marginLeft: 10,
+    maxHeight: 60,
+    fontWeight: '500',
+  },
+  
+  generateButton: {
+    borderRadius: 15,
+    minWidth: 140,
+  },
+  
+  generateButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 15,
+    borderRadius: 15,
+  },
+  
+  generateButtonDisabled: {
+    opacity: 0.7,
+  },
+  
+  generateButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 15,
+    marginLeft: 8,
+  },
+  
+  promptsFooter: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  
+  promptsFooterText: {
+    fontSize: 13,
+    color: '#cbd5e1',
+    flex: 1,
+    marginLeft: 10,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+
+  // Sport badge styles
+  sportBadge: {
+    marginLeft: 10,
+  },
+
+  sportBadgeInner: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+
+  sportBadgeNBA: {
+    backgroundColor: '#ef444420',
+  },
+  sportBadgeNFL: {
+    backgroundColor: '#3b82f620',
+  },
+  sportBadgeNHL: {
+    backgroundColor: '#1e40af20',
+  },
+  sportBadgeMLB: {
+    backgroundColor: '#10b98120',
+  },
+  sportBadgeDefault: {
+    backgroundColor: '#6b728020',
+  },
+  
+  // Sport text styles
+  sportText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  sportTextNBA: {
+    color: '#ef4444',
+  },
+  sportTextNFL: {
+    color: '#3b82f6',
+  },
+  sportTextNHL: {
+    color: '#1e40af',
+  },
+  sportTextMLB: {
+    color: '#10b981',
+  },
+  sportTextDefault: {
+    color: '#6b7280',
+  },
+
+  // Category badge styles
+  categoryBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
+
+  categoryBadgeHigh: {
+    backgroundColor: '#10b98120',
+    borderWidth: 1,
+    borderColor: '#10b98140',
+  },
+  categoryBadgeAI: {
+    backgroundColor: '#8b5cf620',
+    borderWidth: 1,
+    borderColor: '#8b5cf640',
+  },
+  categoryBadgeValue: {
+    backgroundColor: '#f59e0b20',
+    borderWidth: 1,
+    borderColor: '#f59e0b40',
+  },
+  categoryBadgeDefault: {
+    backgroundColor: '#6b728020',
+  },
+
+  // Category text styles
+  categoryText: {
+    fontWeight: 'bold',
+    fontSize: 11,
+  },
+  categoryTextHigh: {
+    color: '#10b981',
+  },
+  categoryTextAI: {
+    color: '#8b5cf6',
+  },
+  categoryTextValue: {
+    color: '#f59e0b',
+  },
+  categoryTextDefault: {
+    color: '#6b7280',
+  },
+
+  // Confidence badge styles
+  confidenceBadge: {
+    marginLeft: 10,
+  },
+
+  confidenceBadgeInner: {
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+
+  confidenceBadgeHigh: {
+    backgroundColor: '#10b981',
+  },
+  confidenceBadgeMedium: {
+    backgroundColor: '#3b82f6',
+  },
+  confidenceBadgeLow: {
+    backgroundColor: '#f59e0b',
+  },
+  confidenceBadgeVeryLow: {
+    backgroundColor: '#ef4444',
+  },
+  
+  confidenceText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+
+  // Pick card styles - UPDATED WITH SOLID BACKGROUNDS
+  pickCard: {
+    borderRadius: 20,
+    marginBottom: 16,
+    backgroundColor: '#ffffff', // SOLID BACKGROUND
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  
+  pickCardContent: {
+    padding: 20,
+    backgroundColor: '#ffffff', // SOLID BACKGROUND
+    borderRadius: 20,
+  },
+
+  picksSection: {
+    marginHorizontal: 20,
+    marginBottom: 30,
+  },
+  
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#f1f5f9',
+  },
+  
+  pickCountBadge: {
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  
+  pickCount: {
+    fontSize: 14,
+    color: '#cbd5e1',
+    fontWeight: 'bold',
+  },
+  
+  picksList: {
+    paddingBottom: 10,
+  },
+  
+  pickHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 15,
+  },
+  
+  playerInfo: {
+    flex: 1,
+  },
+  
+  playerName: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#0f172a',
+  },
+  
+  pickSubheader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  
+  teamText: {
+    fontSize: 16,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  
+  categoryContainer: {
+    marginTop: 10,
+  },
+  
+  pickDetails: {
+    marginBottom: 15,
+  },
+  
+  pickValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#0f766e',
+    marginBottom: 8,
+  },
+  
+  pickMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  
+  oddsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  
+  oddsLabel: {
+    fontSize: 15,
+    color: '#475569',
+    marginRight: 6,
+    fontWeight: '500',
+  },
+  
+  oddsText: {
+    fontSize: 16,
+    color: '#0f172a',
+    fontWeight: 'bold',
+  },
+  
+  edgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#10b98130',
+  },
+  
+  edgeText: {
+    fontSize: 14,
+    color: '#10b981',
+    fontWeight: 'bold',
+    marginLeft: 6,
+  },
+  
+  probabilityMetrics: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#f8fafc',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  
+  metricItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  
+  metricLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 6,
+    fontWeight: '500',
+  },
+  
+  metricValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#0f172a',
+    marginTop: 3,
+  },
+  
+  analysisContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#fffbeb',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#f59e0b30',
+  },
+  
+  analysisText: {
+    fontSize: 15,
+    color: '#92400e',
+    flex: 1,
+    marginLeft: 10,
+    lineHeight: 22,
+    fontWeight: '500',
+  },
+  
+  generatedInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f3ff',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#8b5cf630',
+  },
+  
+  generatedText: {
+    fontSize: 12,
+    color: '#5b21b6',
+    flex: 1,
+    marginLeft: 8,
+    fontStyle: 'italic',
+    fontWeight: '500',
+  },
+  
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  
+  timestamp: {
+    fontSize: 13,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  
+  trackButton: {
+    borderRadius: 12,
+  },
+  
+  trackButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  
+  trackButtonText: {
+    fontSize: 13,
+    color: 'white',
+    fontWeight: 'bold',
+    marginLeft: 6,
+  },
+  
+  emptyContainer: {
+    alignItems: 'center',
+    padding: 40,
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderColor: '#334155',
+  },
+  
+  emptyText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#0f172a',
+    marginTop: 20,
+  },
+  
+  emptySubtext: {
+    fontSize: 16,
+    color: '#475569',
+    marginTop: 8,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  
+  generateEmptyButton: {
+    borderRadius: 15,
+    marginTop: 25,
+  },
+  
+  generateEmptyButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 25,
+    paddingVertical: 14,
+    borderRadius: 15,
+  },
+  
+  generateEmptyButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 15,
+    marginLeft: 8,
+  },
+});

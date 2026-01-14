@@ -1,0 +1,162 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import ApiService from '../services/ApiService';
+
+const TestConnectionScreen = () => {
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const runTests = async () => {
+    setLoading(true);
+    setResults([]);
+
+    const tests = [
+      { name: 'Health Check', test: () => ApiService.checkServerStatus() },
+      { name: 'NBA Games', test: () => ApiService.getGames() },
+      { name: 'NBA Players', test: () => ApiService.getPlayers() },
+      { name: 'Fantasy Advice', test: () => ApiService.getFantasyAdvice() },
+      { name: 'Betting Odds', test: () => ApiService.getBettingOdds() },
+      { name: 'Promo Codes', test: () => ApiService.getPromos() },
+      { name: 'Influencer Directory', test: () => ApiService.getInfluencers() },
+    ];
+
+    for (const test of tests) {
+      try {
+        const start = Date.now();
+        const result = await test.test();
+        const end = Date.now();
+        const latency = end - start;
+
+        setResults(prev => [...prev, {
+          name: test.name,
+          status: '✅ Success',
+          latency: `${latency}ms`,
+          message: result.message || 'Test passed',
+        }]);
+      } catch (error) {
+        setResults(prev => [...prev, {
+          name: test.name,
+          status: '❌ Failed',
+          latency: 'N/A',
+          message: error.message,
+        }]);
+      }
+    }
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    runTests();
+  }, []);
+
+  const renderResultItem = (result, index) => (
+    <View key={`test-result-${index}`} style={styles.resultCard}>
+      <View style={styles.resultHeader}>
+        <Text style={styles.resultName}>{result.name}</Text>
+        <Text style={[
+          styles.resultStatus,
+          result.status.includes('✅') ? styles.success : styles.error
+        ]}>
+          {result.status}
+        </Text>
+      </View>
+      <Text style={styles.resultDetails}>Latency: {result.latency}</Text>
+      <Text style={styles.resultMessage}>
+        {result.message}
+      </Text>
+    </View>
+  );
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>🔧 API Connection Tests</Text>
+      <Text style={styles.subtitle}>Testing all backend endpoints</Text>
+
+      <TouchableOpacity style={styles.button} onPress={runTests} disabled={loading}>
+        <Text style={styles.buttonText}>
+          {loading ? 'Running...' : '🔄 Run Tests'}
+        </Text>
+      </TouchableOpacity>
+
+      <ScrollView style={styles.resultsContainer}>
+        {results.map((result, index) => renderResultItem(result, index)));;
+      </ScrollView>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    padding: 20,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#1e3a8a',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 20,
+  },
+  button: {
+    backgroundColor: '#1e3a8a',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  resultsContainer: {
+    flex: 1,
+  },
+  resultCard: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 10,
+    borderLeftWidth: 5,
+    borderLeftColor: '#ddd',
+  },
+  resultHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  resultName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  resultStatus: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  success: {
+    color: '#10b981',
+  },
+  error: {
+    color: '#ef4444',
+  },
+  resultDetails: {
+    fontSize: 14,
+    color: '#4b5563',
+    marginBottom: 3,
+  },
+  resultMessage: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 5,
+  },
+});
+
+export default TestConnectionScreen;

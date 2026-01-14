@@ -1,0 +1,1243 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
+  RefreshControl,
+  Dimensions,
+  SafeAreaView,
+  Platform,
+  Modal
+} from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
+
+const { width } = Dimensions.get('window');
+
+// ==================== FIREBASE ANALYTICS SETUP ====================
+const logAnalyticsEvent = async (eventName, eventParams = {}) => {
+  try {
+    // Always create the event data
+    const eventData = {
+      event: eventName,
+      params: eventParams,
+      timestamp: new Date().toISOString(),
+      platform: Platform.OS,
+    };
+
+    // Always log to console (both dev and prod for debugging)
+    console.log(`📊 Analytics Event: ${eventName}`, eventParams);
+
+    // Try Firebase analytics on web
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      try {
+        // Dynamically import Firebase
+        const firebaseApp = await import('firebase/app');
+        const firebaseAnalytics = await import('firebase/analytics');
+        
+        // Initialize Firebase if not already
+        let app;
+        if (firebaseApp.getApps().length === 0) {
+          const firebaseConfig = {
+            apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyCi7YQ-vawFT3sIr1i8yuhhx-1vSplAneA",
+            authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "nba-fantasy-ai.firebaseapp.com",
+            projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "nba-fantasy-ai",
+            storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "nba-fantasy-ai.appspot.com",
+            messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "718718403866",
+            appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:718718403866:web:e26e10994d62799a048379",
+            measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-BLTPX9LJ7K"
+          };
+          
+          app = firebaseApp.initializeApp(firebaseConfig);
+        } else {
+          app = firebaseApp.getApp();
+        }
+        
+        // Get analytics and log event
+        const analytics = firebaseAnalytics.getAnalytics(app);
+        if (analytics) {
+          await firebaseAnalytics.logEvent(analytics, eventName, eventParams);
+        }
+      } catch (firebaseError) {
+        console.warn('Firebase analytics error:', firebaseError.message);
+      }
+    }
+    
+    // Always log to AsyncStorage for debugging
+    try {
+      const existingEvents = JSON.parse(await AsyncStorage.getItem('analytics_events') || '[]');
+      existingEvents.push(eventData);
+      if (existingEvents.length > 100) {
+        existingEvents.splice(0, existingEvents.length - 100);
+      }
+      await AsyncStorage.setItem('analytics_events', JSON.stringify(existingEvents));
+    } catch (storageError) {
+      console.warn('Could not save analytics event locally:', storageError.message);
+    }
+  } catch (error) {
+    console.warn('Analytics event failed:', error.message);
+  }
+};
+// ==================== END FIREBASE ANALYTICS ====================
+
+export default function PredictionsScreen({ navigation }) {
+  const nav = useNavigation();
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [predictions, setPredictions] = useState([]);
+  const [selectedSport, setSelectedSport] = useState('NBA');
+  const [aiModelInfo, setAiModelInfo] = useState({
+    accuracy: '87.3%',
+    lastUpdated: 'Today, 10:30 AM',
+    totalPredictions: 1247,
+  });
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterConfidence, setFilterConfidence] = useState(70);
+  const [showInsights, setShowInsights] = useState(false);
+  const [selectedPrediction, setSelectedPrediction] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+
+  const sports = [
+    { id: 'NBA', name: 'NBA', icon: 'basketball', color: '#ef4444' },
+    { id: 'NFL', name: 'NFL', icon: 'american-football', color: '#3b82f6' },
+    { id: 'NHL', name: 'NHL', icon: 'ice-cream', color: '#1e40af' },
+    { id: 'MLB', name: 'MLB', icon: 'baseball', color: '#10b981' },
+  ];
+
+  // Log screen view on mount
+  useEffect(() => {
+    logAnalyticsEvent('predictions_screen_view', {
+      sport: selectedSport,
+      timestamp: new Date().toISOString(),
+    });
+    
+    // Load initial data
+    loadPredictions();
+  }, [selectedSport]);
+
+  const mockPredictions = {
+    NBA: [
+      {
+        id: 'nba-1',
+        player: 'Stephen Curry',
+        team: 'GSW',
+        stat: 'Points',
+        prediction: 'Over 31.5',
+        actualValue: 34.2,
+        confidence: 92,
+        odds: '-120',
+        edge: '+5.2%',
+        matchup: 'vs LAL',
+        trend: 'up',
+        last5Avg: 34.2,
+        insight: 'Hot streak: 40+ points in 3 of last 5 games',
+        timestamp: '2 hours ago',
+      },
+      {
+        id: 'nba-2',
+        player: 'Luka Dončić',
+        team: 'DAL',
+        stat: 'Triple Double',
+        prediction: '68% chance',
+        actualValue: '30/9/8',
+        confidence: 85,
+        odds: '+180',
+        edge: '+3.9%',
+        matchup: '@ PHX',
+        trend: 'stable',
+        last5Avg: '30/9/8',
+        insight: 'High usage rate with Kyrie Irving out',
+        timestamp: '1 hour ago',
+      },
+      {
+        id: 'nba-3',
+        player: 'Giannis Antetokounmpo',
+        team: 'MIL',
+        stat: 'Rebounds',
+        prediction: 'Over 12.5',
+        actualValue: 13.5,
+        confidence: 88,
+        odds: '-110',
+        edge: '+4.8%',
+        matchup: 'vs BOS',
+        trend: 'up',
+        last5Avg: 13.5,
+        insight: 'Dominant paint presence against smaller lineup',
+        timestamp: '3 hours ago',
+      },
+    ],
+    NFL: [
+      {
+        id: 'nfl-1',
+        player: 'Patrick Mahomes',
+        team: 'KC',
+        stat: 'Passing Yards',
+        prediction: 'Over 285.5',
+        actualValue: 298.2,
+        confidence: 90,
+        odds: '-115',
+        edge: '+5.1%',
+        matchup: 'vs LV',
+        trend: 'up',
+        last5Avg: 298.2,
+        insight: 'Favorable matchup against weak secondary',
+        timestamp: '2 hours ago',
+      },
+    ],
+    NHL: [
+      {
+        id: 'nhl-1',
+        player: 'Connor McDavid',
+        team: 'EDM',
+        stat: 'Points',
+        prediction: 'Over 1.5',
+        actualValue: 2.1,
+        confidence: 95,
+        odds: '-140',
+        edge: '+6.1%',
+        matchup: 'vs COL',
+        trend: 'stable',
+        last5Avg: 2.1,
+        insight: 'League leader in scoring pace',
+        timestamp: '4 hours ago',
+      },
+    ],
+    MLB: [
+      {
+        id: 'mlb-1',
+        player: 'Shohei Ohtani',
+        team: 'LAD',
+        stat: 'Home Runs',
+        prediction: 'Over 0.5',
+        actualValue: 0.8,
+        confidence: 79,
+        odds: '+150',
+        edge: '+3.2%',
+        matchup: 'vs SF',
+        trend: 'up',
+        last5Avg: 0.8,
+        insight: 'Power surge in last 10 games',
+        timestamp: '5 hours ago',
+      },
+    ],
+  };
+
+  const loadPredictions = async () => {
+    try {
+      setLoading(true);
+      
+      await logAnalyticsEvent('predictions_data_load_start', {
+        sport: selectedSport,
+        confidence_filter: filterConfidence,
+      });
+      
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      let sportPredictions = mockPredictions[selectedSport] || [];
+      sportPredictions = sportPredictions.filter(p => p.confidence >= filterConfidence);
+      
+      setPredictions(sportPredictions);
+      setLastUpdated(new Date());
+      
+      await logAnalyticsEvent('predictions_data_load_success', {
+        sport: selectedSport,
+        count: sportPredictions.length,
+        confidence_filter: filterConfidence,
+      });
+      
+    } catch (error) {
+      console.error('Error loading predictions:', error);
+      await logAnalyticsEvent('predictions_data_load_error', {
+        error: error.message,
+        sport: selectedSport,
+      });
+      
+      setPredictions(mockPredictions[selectedSport] || []);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await logAnalyticsEvent('predictions_manual_refresh', {
+      sport: selectedSport,
+      timestamp: new Date().toISOString(),
+    });
+    await loadPredictions();
+  };
+
+  const getConfidenceColor = (confidence) => {
+    if (confidence >= 90) return '#10b981';
+    if (confidence >= 80) return '#3b82f6';
+    if (confidence >= 70) return '#f59e0b';
+    return '#ef4444';
+  };
+
+  const getSportColor = (sportId) => {
+    const sport = sports.find(s => s.id === sportId);
+    return sport?.color || '#6b7280';
+  };
+
+  const getTrendIcon = (trend) => {
+    switch (trend) {
+      case 'up': return { name: 'trending-up', color: '#10b981' };
+      case 'down': return { name: 'trending-down', color: '#ef4444' };
+      default: return { name: 'remove-outline', color: '#6b7280' };
+    }
+  };
+
+  const handleSportChange = async (sportId) => {
+    await logAnalyticsEvent('predictions_sport_change', {
+      previous_sport: selectedSport,
+      new_sport: sportId,
+    });
+    setSelectedSport(sportId);
+  };
+
+  const handlePredictionSelect = async (prediction) => {
+    setSelectedPrediction(prediction);
+    setShowInsights(true);
+    await logAnalyticsEvent('predictions_view_details', {
+      player: prediction.player,
+      stat: prediction.stat,
+      confidence: prediction.confidence,
+      sport: selectedSport,
+    });
+  };
+
+  const renderPredictionCard = ({ item }) => {
+    const trendIcon = getTrendIcon(item.trend);
+    const confidenceColor = getConfidenceColor(item.confidence);
+    const sportColor = getSportColor(selectedSport);
+    
+    return (
+      <View style={styles.predictionCardWrapper}>
+        <TouchableOpacity 
+          style={styles.predictionCard}
+          onPress={() => handlePredictionSelect(item)}
+          activeOpacity={0.7}
+        >
+          {/* Header */}
+          <View style={styles.predictionHeader}>
+            <View style={styles.playerInfo}>
+              <View style={styles.playerImagePlaceholderContainer}>
+    <View style={[
+      styles.playerImagePlaceholder,
+      { 
+        backgroundColor: sportColor + '20',
+        borderWidth: 2,
+        borderColor: 'white'
+      }
+    ]}>
+                <Text style={[styles.playerInitial, { color: sportColor }]}>{item.player.charAt(0)}</Text>
+              </View>
+              <View style={styles.playerDetails}>
+                <Text style={styles.playerName}>{item.player}</Text>
+                <View style={styles.playerSubheader}>
+                  <View style={styles.teamBadgeContainer}>
+    <View style={[
+      styles.teamBadge,
+      { 
+        backgroundColor: sportColor + '15',
+        borderWidth: 1,
+        borderColor: sportColor + '30'
+      }
+    ]}>
+                    <Text style={[styles.teamText, { color: sportColor }]}>{item.team}</Text>
+                  </View>
+                  <View style={styles.matchupBadge}>
+                    <Ionicons name="calendar" size={10} color="#6b7280" />
+                    <Text style={styles.matchupText}>{item.matchup}</Text>
+                  </View></View></View>
+            </View>
+            <View style={styles.confidenceBadgeContainer}>
+    <View style={[
+      styles.confidenceBadge,
+      { 
+        backgroundColor: confidenceColor,
+        borderWidth: 1,
+        borderColor: confidenceColor.replace(/[^,]+(?=))/, '0.3)')
+      }
+    ]}>
+              <Text style={styles.confidenceText}>{item.confidence}%</Text>
+            </View>
+          </View>
+          
+          {/* Prediction Details */}
+          <View style={styles.predictionDetails}>
+            <View style={styles.statRow}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="stats-chart" size={14} color="#6b7280" />
+                <Text style={styles.statLabel}>Stat:</Text>
+              </View>
+              <Text style={styles.statValue}>{item.stat}</Text>
+            </View>
+            <View style={styles.statRow}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="analytics" size={14} color="#0f766e" />
+                <Text style={styles.statLabel}>Prediction:</Text>
+              </View>
+              <Text style={styles.predictionValue}>{item.prediction}</Text>
+            </View>
+            <View style={styles.statRow}>
+              <View style={styles.statIconContainer}>
+                <Ionicons name="time" size={14} color="#8b5cf6" />
+                <Text style={styles.statLabel}>Last 5 Avg:</Text>
+              </View>
+              <Text style={styles.lastAvg}>{item.last5Avg}</Text>
+            </View>
+          </View>
+          
+          {/* Odds and Edge */}
+          <View style={styles.oddsSection}>
+            <View style={styles.oddsCard}>
+              <Text style={styles.oddsLabel}>Odds</Text>
+              <Text style={styles.oddsValue}>{item.odds}</Text>
+            </View>
+            <View style={styles.edgeCard}>
+              <Ionicons name="trending-up" size={12} color="#10b981" />
+              <Text style={styles.edgeText}>{item.edge} edge</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.insightButton}
+              onPress={() => handlePredictionSelect(item)}
+            >
+              <Ionicons name="information-circle" size={14} color="#0f766e" />
+            </TouchableOpacity>
+          </View>
+          
+          {/* Footer */}
+          <View style={styles.cardFooter}>
+            <View style={styles.trendContainer}>
+              <Ionicons name={trendIcon.name} size={14} color={trendIcon.color} />
+              <Text style={[styles.trendText, { color: trendIcon.color }]}>
+                {item.trend === 'up' ? 'Trending Up' : 
+                 item.trend === 'down' ? 'Trending Down' : 'Stable'}
+              </Text>
+            </View>
+            <Text style={styles.timestamp}>{item.timestamp}</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  if (loading && !refreshing) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#8b5cf6" />
+        <Text style={styles.loadingText}>Loading AI predictions...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* Header */}
+      <LinearGradient
+        colors={['#0f766e', '#14b8a6']}
+        style={styles.header}
+      >
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.headerTitle}>🤖 AI Predictions Pro</Text>
+            <Text style={styles.headerSubtitle}>Machine learning powered insights</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={async () => {
+                await logAnalyticsEvent('predictions_open_filters');
+                setShowFilters(true);
+              }}
+            >
+              <Ionicons name="filter" size={22} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerButton}
+              onPress={onRefresh}
+            >
+              <Ionicons name="refresh" size={22} color="white" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        <View style={styles.headerStats}>
+          <View style={styles.statBadge}>
+            <Text style={styles.statBadgeValue}>{aiModelInfo.accuracy}</Text>
+            <Text style={styles.statBadgeLabel}>Accuracy</Text>
+          </View>
+          <View style={styles.statBadge}>
+            <Text style={styles.statBadgeValue}>{aiModelInfo.totalPredictions}</Text>
+            <Text style={styles.statBadgeLabel}>Predictions</Text>
+          </View>
+          <View style={styles.statBadge}>
+            <Text style={styles.statBadgeValue}>{predictions.length}</Text>
+            <Text style={styles.statBadgeLabel}>Active</Text>
+          </View>
+        </View>
+      </LinearGradient>
+
+      {/* Refresh Indicator */}
+      <View style={styles.refreshIndicator}>
+        <Ionicons name="time" size={12} color="#6b7280" />
+        <Text style={styles.refreshText}>
+          Updated: {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+        <TouchableOpacity onPress={onRefresh}>
+          <Ionicons name="refresh" size={14} color="#14b8a6" style={styles.refreshIcon} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#0f766e']}
+            tintColor="#0f766e"
+          />
+        }
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Sport Selector */}
+        <View style={styles.sportSelectorContainer}>
+          <Text style={styles.sectionTitle}>Select Sport</Text>
+          <View style={styles.sportSelector}>
+            {sports.map((sport) => (
+              <TouchableOpacity
+                key={`sport-${sport.id}`}
+                style={[
+                  styles.sportButton,
+                  selectedSport === sport.id && [styles.sportButtonActive, { backgroundColor: sport.color }],
+                ]}
+                onPress={() => handleSportChange(sport.id)}
+              >
+                <Ionicons 
+                  name={sport.icon} 
+                  size={18} 
+                  color={selectedSport === sport.id ? '#fff' : sport.color} 
+                />
+                <Text style={[
+                  styles.sportButtonText,
+                  selectedSport === sport.id && styles.sportButtonTextActive,
+                ]}>
+                  {sport.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Today's Predictions */}
+        <View style={styles.predictionsSection}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>🎯 Today's Top Predictions</Text>
+              <Text style={styles.sectionSubtitle}>{selectedSport} • {predictions.length} picks • Min {filterConfidence}% confidence</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.filterButton}
+              onPress={() => setShowFilters(true)}
+            >
+              <Ionicons name="options" size={18} color="#0f766e" />
+            </TouchableOpacity>
+          </View>
+          
+          {predictions.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="analytics-outline" size={48} color="#d1d5db" />
+              <Text style={styles.emptyText}>No predictions match your filters</Text>
+              <Text style={styles.emptySubtext}>Try lowering the confidence filter</Text>
+              <TouchableOpacity 
+                style={styles.emptyButton}
+                onPress={async () => {
+                  await logAnalyticsEvent('predictions_reset_filter');
+                  setFilterConfidence(50);
+                  loadPredictions();
+                }}
+              >
+                <Text style={styles.emptyButtonText}>Show All Predictions</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <FlatList
+              data={predictions}
+              renderItem={renderPredictionCard}
+              keyExtractor={item => `prediction-${item.id}-${selectedSport}`}
+              scrollEnabled={false}
+              contentContainerStyle={styles.predictionsList}
+            />
+          )}
+        </View>
+
+        {/* AI Model Info */}
+        <View style={styles.modelInfo}>
+          <Text style={styles.sectionTitle}>🧠 AI Model Details</Text>
+          
+          <View style={styles.modelDetails}>
+            <View style={styles.modelDetail}>
+              <View style={styles.modelIconContainer}>
+    <View style={[
+      styles.modelIcon,
+      { 
+        backgroundColor: '#8b5cf620',
+        borderWidth: 2,
+        borderColor: 'white'
+      }
+    ]}>
+                <Ionicons name="git-network" size={18} color="#8b5cf6" />
+              </View>
+              <View style={styles.modelDetailText}>
+                <Text style={styles.modelDetailTitle}>Neural Network v4.2</Text>
+                <Text style={styles.modelDetailSubtitle}>Deep learning architecture</Text>
+              </View>
+            </View>
+            
+            <View style={styles.modelDetail}>
+              <View style={styles.modelIconContainer}>
+    <View style={[
+      styles.modelIcon,
+      { 
+        backgroundColor: '#10b98120',
+        borderWidth: 2,
+        borderColor: 'white'
+      }
+    ]}>
+                <Ionicons name="server" size={18} color="#10b981" />
+              </View>
+              <View style={styles.modelDetailText}>
+                <Text style={styles.modelDetailTitle}>50K+ Training Games</Text>
+                <Text style={styles.modelDetailSubtitle}>Historical data analysis</Text>
+              </View>
+            </View>
+            
+            <View style={styles.modelDetail}>
+              <View style={styles.modelIconContainer}>
+    <View style={[
+      styles.modelIcon,
+      { 
+        backgroundColor: '#f59e0b20',
+        borderWidth: 2,
+        borderColor: 'white'
+      }
+    ]}>
+                <Ionicons name="trending-up" size={18} color="#f59e0b" />
+              </View>
+              <View style={styles.modelDetailText}>
+                <Text style={styles.modelDetailTitle}>Real-time Updates</Text>
+                <Text style={styles.modelDetailSubtitle}>Live data integration</Text>
+              </View></View></View>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.quickActions}>
+          <TouchableOpacity 
+            style={styles.quickActionCard}
+            onPress={async () => {
+              await logAnalyticsEvent('predictions_navigate_to_betting');
+              navigation.navigate('Betting');
+            }}
+          >
+            <LinearGradient
+              colors={['#ef4444', '#dc2626']}
+              style={styles.actionButton}
+            >
+              <Ionicons name="cash" size={22} color="#fff" />
+              <Text style={styles.actionButtonText}>Go to Sports Betting</Text>
+              <Ionicons name="arrow-forward" size={18} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionCard}
+            onPress={async () => {
+              await logAnalyticsEvent('predictions_navigate_to_analytics');
+              nav.navigate('Analytics');
+            }}
+          >
+            <LinearGradient
+              colors={['#0f766e', '#14b8a6']}
+              style={styles.actionButton}
+            >
+              <Ionicons name="stats-chart" size={22} color="#fff" />
+              <Text style={styles.actionButtonText}>View Analytics</Text>
+              <Ionicons name="arrow-forward" size={18} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
+        {/* Disclaimer */}
+        <View style={styles.disclaimer}>
+          <Ionicons name="information-circle" size={14} color="#6b7280" />
+          <Text style={styles.disclaimerText}>
+            AI predictions are for informational purposes only. Past performance does not guarantee future results.
+          </Text>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+
+  // Container styles for shadow optimization
+  playerImagePlaceholderContainer: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  
+  teamBadgeContainer: {
+    backgroundColor: 'white',
+    borderRadius: 6,
+    padding: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  
+  confidenceBadgeContainer: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  
+  modelIconContainer: {
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+
+  // Fixed shadow warnings by ensuring all shadowed views have solid backgrounds
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  scrollContent: {
+    paddingBottom: 30,
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
+  },
+  header: {
+    padding: 20,
+    paddingTop: 50,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 15,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: 'white',
+    opacity: 0.9,
+    marginTop: 4,
+  },
+  headerActions: {
+    flexDirection: 'row',
+  },
+  headerButton: {
+    marginLeft: 8,
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 8,
+  },
+  headerStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  statBadge: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  statBadgeValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  statBadgeLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 2,
+  },
+  refreshIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    backgroundColor: '#f8fafc', // SOLID BACKGROUND
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  refreshText: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginLeft: 6,
+  },
+  refreshIcon: {
+    marginLeft: 8,
+  },
+  sportSelectorContainer: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+    backgroundColor: 'transparent', // Explicit background
+  },
+  sportSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: 'white', // SOLID BACKGROUND
+    borderRadius: 12,
+    padding: 8,
+    marginTop: 8,
+    backgroundColor: 'white',
+    shadowColor: '#000',
+    backgroundColor: 'white',
+    shadowOffset: { width: 0, height: 1 },
+    backgroundColor: 'white',
+    shadowOpacity: 0.05,
+    backgroundColor: 'white',
+    shadowRadius: 4,
+    backgroundColor: 'white',
+    elevation: 2,
+  },
+  sportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: 'white', // SOLID BACKGROUND
+    flex: 1,
+    justifyContent: 'center',
+    marginHorizontal: 4,
+  },
+  sportButtonActive: {
+    borderWidth: 0,
+  },
+  sportButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 6,
+    color: '#6b7280',
+  },
+  sportButtonTextActive: {
+    color: 'white',
+  },
+  predictionsSection: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: 'transparent', // Explicit background
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    backgroundColor: 'transparent', // Explicit background
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    backgroundColor: 'transparent', // Explicit background
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 2,
+    backgroundColor: 'transparent', // Explicit background
+  },
+  filterButton: {
+    padding: 8,
+    backgroundColor: '#f0fdfa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  predictionsList: {
+    paddingBottom: 8,
+  },
+  predictionCardWrapper: {
+    marginBottom: 10,
+    backgroundColor: 'transparent', // Wrapper has transparent bg
+  },
+  predictionCard: {
+    backgroundColor: 'white', // SOLID BACKGROUND
+    borderRadius: 14,
+    padding: 16,
+    backgroundColor: 'white',
+    shadowColor: '#000',
+    backgroundColor: 'white',
+    shadowOffset: { width: 0, height: 1 },
+    backgroundColor: 'white',
+    shadowOpacity: 0.05,
+    backgroundColor: 'white',
+    shadowRadius: 6,
+    backgroundColor: 'white',
+    elevation: 2,
+  },
+  predictionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  playerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  playerImagePlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  playerInitial: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  playerDetails: {
+    flex: 1,
+  },
+  playerName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  playerSubheader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  teamBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  teamText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  matchupBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+    backgroundColor: '#f3f4f6',
+  },
+  matchupText: {
+    fontSize: 10,
+    color: '#6b7280',
+    marginLeft: 3,
+  },
+  confidenceBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  confidenceText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  predictionDetails: {
+    marginBottom: 14,
+  },
+  statRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+    paddingVertical: 3,
+    backgroundColor: 'transparent', // Explicit background
+  },
+  statIconContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent', // Explicit background
+  },
+  statLabel: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginLeft: 5,
+  },
+  statValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  predictionValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#0f766e',
+  },
+  lastAvg: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8b5cf6',
+  },
+  oddsSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    backgroundColor: 'transparent', // Explicit background
+  },
+  oddsCard: {
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    alignItems: 'center',
+    minWidth: 70,
+  },
+  oddsLabel: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+  oddsValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  edgeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    minWidth: 70,
+    justifyContent: 'center',
+  },
+  edgeText: {
+    fontSize: 11,
+    color: '#10b981',
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  insightButton: {
+    padding: 6,
+    backgroundColor: '#f0fdfa',
+    borderRadius: 6,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'transparent', // Explicit background
+  },
+  trendContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent', // Explicit background
+  },
+  trendText: {
+    fontSize: 12,
+    marginLeft: 5,
+  },
+  timestamp: {
+    fontSize: 11,
+    color: '#9ca3af',
+  },
+  emptyState: {
+    backgroundColor: 'white', // SOLID BACKGROUND
+    borderRadius: 14,
+    padding: 30,
+    alignItems: 'center',
+    backgroundColor: 'white',
+    shadowColor: '#000',
+    backgroundColor: 'white',
+    shadowOffset: { width: 0, height: 1 },
+    backgroundColor: 'white',
+    shadowOpacity: 0.05,
+    backgroundColor: 'white',
+    shadowRadius: 6,
+    backgroundColor: 'white',
+    elevation: 2,
+  },
+  emptyText: {
+    fontSize: 15,
+    color: '#6b7280',
+    marginTop: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  emptySubtext: {
+    fontSize: 13,
+    color: '#9ca3af',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  emptyButton: {
+    marginTop: 16,
+    backgroundColor: '#f0fdfa',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#0f766e',
+  },
+  emptyButtonText: {
+    color: '#0f766e',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  modelInfo: {
+    backgroundColor: 'white', // SOLID BACKGROUND
+    marginHorizontal: 16,
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: 'white',
+    shadowColor: '#000',
+    backgroundColor: 'white',
+    shadowOffset: { width: 0, height: 1 },
+    backgroundColor: 'white',
+    shadowOpacity: 0.05,
+    backgroundColor: 'white',
+    shadowRadius: 6,
+    backgroundColor: 'white',
+    elevation: 2,
+  },
+  modelDetails: {
+    marginTop: 12,
+  },
+  modelDetail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    backgroundColor: 'transparent', // Explicit background
+  },
+  modelIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modelDetailText: {
+    marginLeft: 10,
+    flex: 1,
+    backgroundColor: 'transparent', // Explicit background
+  },
+  modelDetailTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  modelDetailSubtitle: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  quickActions: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: 'transparent', // Explicit background
+  },
+  quickActionCard: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 10,
+    backgroundColor: 'white',
+    shadowColor: '#000',
+    backgroundColor: 'white',
+    shadowOffset: { width: 0, height: 1 },
+    backgroundColor: 'white',
+    shadowOpacity: 0.08,
+    backgroundColor: 'white',
+    shadowRadius: 6,
+    backgroundColor: 'white',
+    elevation: 3,
+    backgroundColor: 'white', // SOLID BACKGROUND (critical fix for shadow warning)
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  actionButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'white',
+    flex: 1,
+    marginHorizontal: 10,
+  },
+  disclaimer: {
+    flexDirection: 'row',
+    backgroundColor: '#f3f4f6',
+    marginHorizontal: 16,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#f3f4f6', // SOLID BACKGROUND
+  },
+  disclaimerText: {
+    fontSize: 11,
+    color: '#6b7280',
+    flex: 1,
+    marginLeft: 8,
+    lineHeight: 14,
+  },
+});

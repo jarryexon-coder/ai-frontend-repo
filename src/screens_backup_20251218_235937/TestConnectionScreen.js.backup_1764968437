@@ -1,0 +1,116 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Button, ScrollView } from 'react-native';
+import ApiService from '../services/api-service';
+
+const TestConnectionScreen = () => {
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const addResult = (message, type = 'info') => {
+    setResults(prev => [...prev, { message, type, timestamp: new Date().toISOString() }]);
+  };
+
+  const testConnection = async () => {
+    setLoading(true);
+    addResult('🔄 Starting connection test...');
+    
+    try {
+      addResult(`🔍 Testing connection to: ${ApiService.baseURL}`);
+      
+      const healthData = await ApiService.checkServerStatus();
+      addResult(`✅ Server health: ${healthData.status}`, 'success');
+      
+      // Test specific endpoints
+      try {
+        const games = await ApiService.getTodayGames().then(res => res.data);
+        addResult(`✅ Games endpoint: ${games.length} games found`, 'success');
+      } catch (error) {
+        addResult(`❌ Games endpoint: ${error.message}`, 'error');
+      }
+      
+      try {
+        const advice = await ApiService.getFantasyAdvice().then(res => res.data);
+        addResult(`✅ Fantasy advice: ${advice.length} recommendations`, 'success');
+      } catch (error) {
+        addResult(`❌ Fantasy advice: ${error.message}`, 'error');
+      }
+      
+    } catch (error) {
+      addResult(`❌ Connection failed: ${error.message}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearResults = () => {
+    setResults([]);
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>🏀 API Connection Test</Text>
+      
+      <View style={styles.buttonContainer}>
+        <Button 
+          title={loading ? "Testing..." : "Test Connection"} 
+          onPress={testConnection}
+          disabled={loading}
+        />
+        <Button title="Clear Results" onPress={clearResults} color="gray" />
+      </View>
+
+      <ScrollView style={styles.resultsContainer}>
+        {results.map((result, index) => (
+          <Text 
+            key={index} 
+            style={[
+              styles.resultText,
+              result.type === 'success' && styles.successText,
+              result.type === 'error' && styles.errorText
+            ]}
+          >
+            {result.message}
+          </Text>
+        ))}
+      </ScrollView>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+    backgroundColor: '#f5f5f5',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 20,
+  },
+  resultsContainer: {
+    flex: 1,
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 16,
+  },
+  resultText: {
+    fontSize: 14,
+    marginBottom: 8,
+    fontFamily: 'monospace',
+  },
+  successText: {
+    color: 'green',
+  },
+  errorText: {
+    color: 'red',
+  },
+});
+
+export default TestConnectionScreen;

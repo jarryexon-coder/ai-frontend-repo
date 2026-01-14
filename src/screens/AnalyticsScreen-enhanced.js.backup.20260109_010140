@@ -1,0 +1,2300 @@
+// src/screens/AnalyticsScreen-enhanced.js - SIMPLIFIED TAB VERSION
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  FlatList,
+  ActivityIndicator,
+  RefreshControl,
+  TouchableOpacity,
+  Dimensions,
+  Alert,
+  SafeAreaView,
+  Platform,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import SearchBar from '../components/SearchBar';
+import { useSearch } from '../providers/SearchProvider';
+import { useSportsData } from '../hooks/useSportsData';
+import { useAppNavigation } from '../navigation/NavigationHelper';
+import usePredictionCounter from '../hooks/usePredictionCounter';
+
+const { width } = Dimensions.get('window');
+
+// ====== GENERAL ANALYTICS TAB ======
+const GeneralAnalyticsTab = () => {
+  const navigation = useAppNavigation();
+  const { searchHistory, addToSearchHistory } = useSearch();
+  
+  const { 
+    data, 
+    refreshAllData, 
+    isLoading, 
+    error,
+    nbaError,
+    nflError,
+    nhlError
+  } = useSportsData({
+    autoRefresh: false,
+    refreshInterval: 30000
+  });
+
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedSport, setSelectedSport] = useState('NBA');
+  const [selectedMetric, setSelectedMetric] = useState('overview');
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showPrompts, setShowPrompts] = useState(true);
+  const [filteredData, setFilteredData] = useState([]);
+  const [selectedPromptCategory, setSelectedPromptCategory] = useState('Team Performance');
+
+  const sports = ['NBA', 'NFL', 'NHL', 'MLB', 'MLS'];
+  const metrics = ['overview', 'trends', 'teams', 'players', 'advanced'];
+  
+  const USEFUL_PROMPTS = [
+    {
+      category: 'Team Performance',
+      prompts: [
+        "Show Lakers home vs away stats",
+        "Compare Warriors offense vs defense",
+        "Best shooting teams this season",
+        "Teams with best defense",
+        "Highest scoring teams recently",
+      ]
+    },
+    {
+      category: 'Player Insights',
+      prompts: [
+        "Top scorers this month",
+        "Players with best shooting %",
+        "Assist leaders per game",
+        "Rebound trends by position",
+        "Players improving this season",
+      ]
+    },
+    {
+      category: 'Game Trends',
+      prompts: [
+        "High scoring games this week",
+        "Games with close scores",
+        "Overtime frequency by team",
+        "Home advantage statistics",
+        "Trends in 3-point shooting",
+      ]
+    },
+    {
+      category: 'Advanced Metrics',
+      prompts: [
+        "Team efficiency ratings",
+        "Player usage rates",
+        "Defensive rating leaders",
+        "Offensive pace analysis",
+        "Turnover to assist ratio",
+      ]
+    }
+  ];
+
+  const getCurrentPrompts = () => {
+    const category = USEFUL_PROMPTS.find(cat => cat.category === selectedPromptCategory);
+    return category ? category.prompts : USEFUL_PROMPTS[0].prompts;
+  };
+
+  const handlePromptSelect = (prompt) => {
+    setSearchQuery(prompt);
+    handleAnalyticsSearch(prompt);
+  };
+
+  const getRealSportData = useCallback(() => {
+    switch(selectedSport) {
+      case 'NBA':
+        return {
+          games: data.nba.games || [],
+          isLoading: data.nba.isLoading,
+          error: nbaError,
+          stats: generateNBAAnalytics(data.nba.games || [])
+        };
+      case 'NFL':
+        return {
+          games: data.nfl.games || [],
+          isLoading: data.nfl.isLoading,
+          error: nflError,
+          stats: generateNFLAnalytics(data.nfl.games || [])
+        };
+      case 'NHL':
+        return {
+          games: data.nhl.games || [],
+          isLoading: data.nhl.isLoading,
+          error: nhlError,
+          stats: generateNHLAnalytics(data.nhl.games || [])
+        };
+      default:
+        return {
+          games: [],
+          isLoading: false,
+          error: null,
+          stats: {}
+        };
+    }
+  }, [selectedSport, data, nbaError, nflError, nhlError]);
+
+  const generateNBAAnalytics = (games) => {
+    if (!games || games.length === 0) return getDefaultNBAData();
+    
+    const totalGames = games.length;
+    const completedGames = games.filter(g => g.status === 'Final');
+    
+    if (completedGames.length === 0) return getDefaultNBAData();
+    
+    const totalHomeWins = completedGames.filter(g => {
+      const homeScore = g.homeScore || g.homeTeam?.score || 0;
+      const awayScore = g.awayScore || g.awayTeam?.score || 0;
+      return parseInt(homeScore) > parseInt(awayScore);
+    }).length;
+    
+    const homeWinRate = (totalHomeWins / completedGames.length * 100).toFixed(1);
+    
+    const totalPoints = completedGames.reduce((sum, game) => {
+      const homeScore = game.homeScore || game.homeTeam?.score || 0;
+      const awayScore = game.awayScore || game.awayTeam?.score || 0;
+      return sum + parseInt(homeScore) + parseInt(awayScore);
+    }, 0);
+    
+    const avgPoints = (totalPoints / completedGames.length).toFixed(1);
+    
+    return {
+      overview: {
+        totalGames,
+        avgPoints,
+        homeWinRate: `${homeWinRate}%`,
+        avgMargin: '8.5',
+        overUnder: '52% Over',
+        keyTrend: 'Points up +3.2% from last season',
+      },
+      advancedStats: {
+        pace: '98.2',
+        offRating: '114.5',
+        defRating: '111.8',
+        netRating: '2.7',
+        trueShooting: '57.9',
+        assistRatio: '61.8',
+      },
+      trendingStats: {
+        bestOffense: 'Dallas Mavericks (121.4 PPG)',
+        bestDefense: 'Boston Celtics (107.8 PPG)',
+        mostImproving: 'Orlando Magic (+12 wins)',
+        surpriseTeam: 'Oklahoma City Thunder',
+        playerToWatch: 'Shai Gilgeous-Alexander'
+      }
+    };
+  };
+
+  const generateNFLAnalytics = (games) => {
+    if (!games || games.length === 0) return getDefaultNFLData();
+    
+    return {
+      overview: {
+        totalGames: games.length,
+        avgPoints: '43.2',
+        homeWinRate: '55.1%',
+        avgMargin: '9.8',
+        overUnder: '48% Over',
+        keyTrend: 'Passing yards up +7.1%',
+      },
+      advancedStats: {
+        yardsPerPlay: '5.4',
+        thirdDownPct: '40.2',
+        redZonePct: '55.8',
+        turnoverMargin: '0.3',
+        timeOfPossession: '30.2',
+        explosivePlayRate: '12.8',
+      },
+      trendingStats: {
+        bestOffense: 'Miami Dolphins (31.2 PPG)',
+        bestDefense: 'Baltimore Ravens (16.8 PPG)',
+        mostImproving: 'Houston Texans (+7 wins)',
+        surpriseTeam: 'Detroit Lions',
+        playerToWatch: 'C.J. Stroud'
+      }
+    };
+  };
+
+  const generateNHLAnalytics = (games) => {
+    if (!games || games.length === 0) return getDefaultNHLData();
+    
+    return {
+      overview: {
+        totalGames: games.length,
+        avgGoals: '6.1',
+        homeWinRate: '53.8%',
+        avgMargin: '2.4',
+        overUnder: '52% Over',
+        keyTrend: 'Power play success up +2.8%',
+      },
+      advancedStats: {
+        corsiForPct: '52.1',
+        fenwickForPct: '51.8',
+        pdo: '100.2',
+        expectedGoals: '3.12',
+        highDangerChances: '11.4',
+        savePercentage: '0.912',
+      },
+      trendingStats: {
+        bestOffense: 'Colorado Avalanche (3.8 GPG)',
+        bestDefense: 'Vancouver Canucks (2.3 GPG)',
+        mostImproving: 'New York Rangers',
+        surpriseTeam: 'Winnipeg Jets',
+        playerToWatch: 'Connor Bedard'
+      }
+    };
+  };
+
+  const getDefaultNBAData = () => ({
+    overview: {
+      totalGames: 1230,
+      avgPoints: 112.4,
+      homeWinRate: '58.2%',
+      avgMargin: 11.8,
+      overUnder: '54% Over',
+      keyTrend: 'Points up +3.2% from last season',
+    },
+    advancedStats: {
+      pace: 99.3,
+      offRating: 114.2,
+      defRating: 111.8,
+      netRating: 2.4,
+      trueShooting: 58.1,
+      assistRatio: 62.3,
+    },
+    trendingStats: {
+      bestOffense: 'Dallas Mavericks (121.4 PPG)',
+      bestDefense: 'Boston Celtics (107.8 PPG)',
+      mostImproving: 'Orlando Magic (+12 wins)',
+      surpriseTeam: 'Oklahoma City Thunder',
+      playerToWatch: 'Shai Gilgeous-Alexander'
+    }
+  });
+
+  const getDefaultNFLData = () => ({
+    overview: {
+      totalGames: 272,
+      avgPoints: 43.8,
+      homeWinRate: '55.1%',
+      avgMargin: 10.2,
+      overUnder: '48% Over',
+      keyTrend: 'Passing yards up +7.1%',
+    },
+    advancedStats: {
+      yardsPerPlay: 5.4,
+      thirdDownPct: 40.2,
+      redZonePct: 55.8,
+      turnoverMargin: 0.3,
+      timeOfPossession: 30.2,
+      explosivePlayRate: 12.8,
+    },
+    trendingStats: {
+      bestOffense: 'Miami Dolphins (31.2 PPG)',
+      bestDefense: 'Baltimore Ravens (16.8 PPG)',
+      mostImproving: 'Houston Texans (+7 wins)',
+      surpriseTeam: 'Detroit Lions',
+      playerToWatch: 'C.J. Stroud'
+    }
+  });
+
+  const getDefaultNHLData = () => ({
+    overview: {
+      totalGames: 1312,
+      avgGoals: 6.1,
+      homeWinRate: '53.8%',
+      avgMargin: 2.4,
+      overUnder: '52% Over',
+      keyTrend: 'Power play success up +2.8%',
+    },
+    advancedStats: {
+      corsiForPct: 52.1,
+      fenwickForPct: 51.8,
+      pdo: 100.2,
+      expectedGoals: 3.12,
+      highDangerChances: 11.4,
+      savePercentage: 0.912,
+    },
+    trendingStats: {
+      bestOffense: 'Colorado Avalanche (3.8 GPG)',
+      bestDefense: 'Vancouver Canucks (2.3 GPG)',
+      mostImproving: 'New York Rangers',
+      surpriseTeam: 'Winnipeg Jets',
+      playerToWatch: 'Connor Bedard'
+    }
+  });
+
+  const currentSportData = getRealSportData();
+
+  const logAnalyticsEvent = async (eventName, eventParams = {}) => {
+    try {
+      const eventData = {
+        event: eventName,
+        params: eventParams,
+        timestamp: new Date().toISOString(),
+        platform: Platform.OS,
+      };
+
+      if (__DEV__) {
+        console.log(`📊 Analytics Event: ${eventName}`, eventParams);
+      }
+
+      try {
+        const existingEvents = JSON.parse(await AsyncStorage.getItem('analytics_events') || '[]');
+        existingEvents.push(eventData);
+        if (existingEvents.length > 100) {
+          existingEvents.splice(0, existingEvents.length - 100);
+        }
+        await AsyncStorage.setItem('analytics_events', JSON.stringify(existingEvents));
+      } catch (storageError) {
+        console.log('Storage error:', storageError);
+      }
+    } catch (error) {
+      console.log('Analytics error:', error);
+    }
+  };
+
+  const handleAnalyticsSearch = (query) => {
+    setSearchQuery(query);
+    addToSearchHistory(query);
+    
+    if (!query.trim()) {
+      setFilteredData([]);
+      return;
+    }
+
+    const queryLower = query.toLowerCase();
+    const games = currentSportData.games || [];
+    
+    const results = games.filter(game => {
+      const homeTeam = game.homeTeam?.name || game.homeTeam || '';
+      const awayTeam = game.awayTeam?.name || game.awayTeam || '';
+      const venue = game.venue || '';
+      
+      return (
+        homeTeam.toString().toLowerCase().includes(queryLower) ||
+        awayTeam.toString().toLowerCase().includes(queryLower) ||
+        venue.toString().toLowerCase().includes(queryLower)
+      );
+    });
+    
+    setFilteredData(results);
+    
+    logAnalyticsEvent('analytics_search', {
+      query: query,
+      sport: selectedSport,
+      results_count: results.length,
+    });
+  };
+
+  const handleNavigateToGameDetails = (game) => {
+    navigation.navigate('GameDetails', { game });
+    logAnalyticsEvent('analytics_navigate_game_details', {
+      sport: selectedSport,
+      game_id: game.id,
+    });
+  };
+
+  useEffect(() => {
+    logAnalyticsEvent('analytics_screen_view', {
+      sport: selectedSport,
+      metric: selectedMetric,
+    });
+  }, [selectedSport]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    
+    await logAnalyticsEvent('analytics_manual_refresh', {
+      sport: selectedSport,
+    });
+    
+    try {
+      await refreshAllData();
+      setLastUpdated(new Date());
+      console.log('✅ Analytics data refreshed manually');
+    } catch (error) {
+      console.error('❌ Refresh failed:', error);
+      Alert.alert('Refresh Failed', 'Could not update analytics data. Please try again.');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshAllData, selectedSport]);
+
+  const getMetricIcon = (metric) => {
+    switch(metric) {
+      case 'overview': return 'grid';
+      case 'trends': return 'trending-up';
+      case 'teams': return 'people';
+      case 'players': return 'person';
+      case 'advanced': return 'stats-chart';
+      default: return 'analytics';
+    }
+  };
+
+  const renderSearchResults = () => {
+    if (filteredData.length === 0 || !searchQuery.trim()) return null;
+    
+    return (
+      <View style={styles.searchResultsContainer}>
+        <View style={styles.searchResultsHeader}>
+          <Text style={styles.searchResultsTitle}>
+            {filteredData.length} result{filteredData.length !== 1 ? 's' : ''} for "{searchQuery}"
+          </Text>
+          <TouchableOpacity 
+            onPress={() => {
+              setSearchQuery('');
+              setFilteredData([]);
+            }}
+          >
+            <Ionicons name="close" size={18} color="#6b7280" />
+          </TouchableOpacity>
+        </View>
+        <FlatList
+          data={filteredData}
+          keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
+          renderItem={({ item }) => {
+            const homeTeam = item.homeTeam?.name || item.homeTeam || 'Home Team';
+            const awayTeam = item.awayTeam?.name || item.awayTeam || 'Away Team';
+            const homeScore = item.homeScore || item.homeTeam?.score || '0';
+            const awayScore = item.awayScore || item.awayTeam?.score || '0';
+            const status = item.status || 'Scheduled';
+            const date = item.date || new Date().toLocaleDateString();
+            
+            return (
+              <TouchableOpacity 
+                style={styles.searchResultItem}
+                onPress={() => handleNavigateToGameDetails(item)}
+              >
+                <View style={styles.gameInfo}>
+                  <View style={styles.gameTeamsContainer}>
+                    <Text style={styles.homeTeam}>{homeTeam}</Text>
+                    <Text style={styles.vsText}>vs</Text>
+                    <Text style={styles.awayTeam}>{awayTeam}</Text>
+                  </View>
+                  <View style={styles.gameMeta}>
+                    <Text style={styles.gameDate}>{date}</Text>
+                    <View style={[
+                      styles.statusBadge,
+                      status === 'Final' ? styles.finalBadge : styles.scheduledBadge
+                    ]}>
+                      <Text style={styles.statusText}>{status}</Text>
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.gameScore}>
+                  <Text style={styles.scoreText}>
+                    {homeScore} - {awayScore}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+          scrollEnabled={false}
+        />
+      </View>
+    );
+  };
+
+  const renderHeader = () => (
+    <LinearGradient
+      colors={['#0f766e', '#14b8a6']}
+      style={styles.header}
+    >
+      <View style={styles.headerTop}>
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={onRefresh}
+            disabled={refreshing}
+          >
+            <Ionicons 
+              name="refresh" 
+              size={22} 
+              color="white" 
+              style={refreshing && { opacity: 0.7 }}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      <View style={styles.headerMain}>
+        <View style={styles.headerIconContainer}>
+          <Ionicons name="analytics" size={28} color="white" />
+        </View>
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.title}>Sports Analytics Hub</Text>
+          <Text style={styles.subtitle}>Real-time insights & intelligent search</Text>
+        </View>
+      </View>
+
+      <View style={styles.sportsContainer}>
+        {sports.map((sport, index) => (
+          <TouchableOpacity
+            key={sport}
+            style={[
+              styles.sportButton,
+              selectedSport === sport && styles.activeSportButton
+            ]}
+            onPress={async () => {
+              await logAnalyticsEvent('analytics_select_sport', {
+                previous_sport: selectedSport,
+                new_sport: sport,
+              });
+              setSelectedSport(sport);
+              setSelectedMetric('overview');
+              setSearchQuery('');
+              setFilteredData([]);
+            }}
+          >
+            <Text style={[
+              styles.sportText,
+              selectedSport === sport && styles.activeSportText
+            ]}>
+              {sport}
+            </Text>
+            {selectedSport === sport && (
+              <View style={styles.activeIndicator} />
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+    </LinearGradient>
+  );
+
+  const renderPrompts = () => (
+    <View style={styles.promptsContainer}>
+      <View style={styles.promptsHeader}>
+        <View style={styles.promptsTitleContainer}>
+          <Ionicons name="analytics" size={20} color="#14b8a6" />
+          <Text style={styles.promptsTitle}>Smart Search Prompts</Text>
+        </View>
+        <TouchableOpacity 
+          onPress={() => setShowPrompts(!showPrompts)}
+          style={styles.promptsToggle}
+        >
+          <Ionicons 
+            name={showPrompts ? "chevron-up" : "chevron-down"} 
+            size={20} 
+            color="#14b8a6" 
+          />
+        </TouchableOpacity>
+      </View>
+      
+      {showPrompts && (
+        <>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.promptCategories}
+          >
+            {USEFUL_PROMPTS.map((category, index) => (
+              <TouchableOpacity
+                key={category.category}
+                style={[
+                  styles.promptCategoryButton,
+                  selectedPromptCategory === category.category && styles.activePromptCategory
+                ]}
+                onPress={() => setSelectedPromptCategory(category.category)}
+              >
+                <Text style={[
+                  styles.promptCategoryText,
+                  selectedPromptCategory === category.category && styles.activePromptCategoryText
+                ]}>
+                  {category.category}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          
+          <View style={styles.promptsGrid}>
+            {getCurrentPrompts().map((prompt, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.promptChip}
+                onPress={() => handlePromptSelect(prompt)}
+              >
+                <View style={styles.promptChipContent}>
+                  <Ionicons name="search" size={14} color="#14b8a6" />
+                  <Text style={styles.promptChipText}>{prompt}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+          
+          <View style={styles.usageTips}>
+            <Ionicons name="information-circle" size={16} color="#14b8a6" />
+            <Text style={styles.usageTipsText}>
+              Tap any prompt to search • Edit prompts for custom queries • Results show real game data
+            </Text>
+          </View>
+        </>
+      )}
+    </View>
+  );
+
+  const renderMetricTabs = () => (
+    <View style={styles.metricsContainer}>
+      {metrics.map((metric, index) => (
+        <TouchableOpacity
+          key={metric}
+          style={[
+            styles.metricTab,
+            selectedMetric === metric && styles.activeMetricTab
+          ]}
+          onPress={async () => {
+            await logAnalyticsEvent('analytics_select_metric', {
+              previous_metric: selectedMetric,
+              new_metric: metric,
+              sport: selectedSport,
+            });
+            setSelectedMetric(metric);
+          }}
+        >
+          {selectedMetric === metric ? (
+            <View style={styles.metricTabContent}>
+              <Ionicons 
+                name={getMetricIcon(metric)} 
+                size={16} 
+                color="white" 
+                style={styles.metricIcon}
+              />
+              <Text style={styles.activeMetricText}>
+                {metric.charAt(0).toUpperCase() + metric.slice(1)}
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Ionicons 
+                name={getMetricIcon(metric)} 
+                size={16} 
+                color="#6b7280" 
+                style={styles.metricIcon}
+              />
+              <Text style={styles.metricText}>
+                {metric.charAt(0).toUpperCase() + metric.slice(1)}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const renderOverview = () => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>📊 Season Overview</Text>
+        <Text style={styles.sectionSubtitle}>{selectedSport} • Season</Text>
+      </View>
+      
+      <View style={styles.overviewGrid}>
+        <View style={styles.overviewCard}>
+          <Ionicons name="calendar" size={28} color="#3b82f6" />
+          <Text style={styles.overviewValue}>
+            {currentSportData.stats.overview?.totalGames || 0}
+          </Text>
+          <Text style={styles.overviewLabel}>Games Tracked</Text>
+        </View>
+        
+        <View style={styles.overviewCard}>
+          <Ionicons name="trophy" size={28} color="#10b981" />
+          <Text style={styles.overviewValue}>
+            {currentSportData.stats.overview?.homeWinRate || '0%'}
+          </Text>
+          <Text style={styles.overviewLabel}>Home Win Rate</Text>
+        </View>
+        
+        <View style={styles.overviewCard}>
+          <Ionicons name="stats-chart" size={28} color="#ef4444" />
+          <Text style={styles.overviewValue}>
+            {currentSportData.stats.overview?.avgPoints || 0}
+          </Text>
+          <Text style={styles.overviewLabel}>Avg Points/Game</Text>
+        </View>
+        
+        <View style={styles.overviewCard}>
+          <Ionicons name="trending-up" size={28} color="#f59e0b" />
+          <Text style={styles.overviewValue}>
+            {currentSportData.stats.overview?.overUnder || '0%'}
+          </Text>
+          <Text style={styles.overviewLabel}>Over Rate</Text>
+        </View>
+      </View>
+      
+      <View style={styles.keyTrendsSection}>
+        <Text style={styles.keyTrendsTitle}>🔥 Current Trends</Text>
+        <View style={styles.trendCard}>
+          <Ionicons name="flash" size={20} color="#14b8a6" />
+          <Text style={styles.trendText}>
+            {currentSportData.stats.overview?.keyTrend || 'No trend data available'}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderTrendingStats = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>🚀 Trending This Season</Text>
+      
+      <View style={styles.trendingStatsGrid}>
+        {currentSportData.stats.trendingStats && Object.entries(currentSportData.stats.trendingStats).map(([key, value], index) => (
+          <View key={key} style={styles.trendingStatCard}>
+            <View style={styles.trendingStatContent}>
+              <Text style={styles.trendingStatLabel}>
+                {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+              </Text>
+              <Text style={styles.trendingStatValue}>{value}</Text>
+              <View style={styles.trendingIcon}>
+                <Ionicons 
+                  name={index % 2 === 0 ? "trending-up" : "star"} 
+                  size={16} 
+                  color={index % 2 === 0 ? "#10b981" : "#f59e0b"} 
+                />
+              </View>
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderAdvancedMetrics = () => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>🧠 Advanced Metrics</Text>
+        <Ionicons name="analytics" size={20} color="#14b8a6" />
+      </View>
+      
+      <View style={styles.advancedGrid}>
+        {currentSportData.stats.advancedStats && Object.entries(currentSportData.stats.advancedStats).map(([key, value], index) => (
+          <View key={key} style={styles.advancedMetricCard}>
+            <View style={styles.advancedMetricContent}>
+              <Text style={styles.advancedMetricLabel}>
+                {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+              </Text>
+              <Text style={styles.advancedMetricValue}>{value}</Text>
+              <View style={styles.metricProgress}>
+                <View style={[styles.progressBar, { width: `${Math.min(100, parseInt(value) * 2)}%` }]} />
+              </View>
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderRecentGames = () => {
+    const games = currentSportData.games || [];
+    if (games.length === 0) return null;
+    
+    const recentGames = games.slice(0, 3);
+    
+    return (
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>📅 Recent Games</Text>
+        </View>
+        
+        {recentGames.map((item, index) => {
+          const homeTeam = item.homeTeam?.name || item.homeTeam || 'Home Team';
+          const awayTeam = item.awayTeam?.name || item.awayTeam || 'Away Team';
+          const homeScore = item.homeScore || item.homeTeam?.score || '0';
+          const awayScore = item.awayScore || item.awayTeam?.score || '0';
+          const status = item.status || 'Scheduled';
+          const date = item.date || new Date().toLocaleDateString();
+          
+          return (
+            <TouchableOpacity 
+              key={item.id || index}
+              style={styles.gameCard}
+              onPress={() => handleNavigateToGameDetails(item)}
+            >
+              <View style={styles.gameCardContent}>
+                <View style={styles.gameHeader}>
+                  <View style={styles.gameStatusContainer}>
+                    <View style={[
+                      styles.statusDot,
+                      status === 'Final' ? styles.finalDot : styles.liveDot
+                    ]} />
+                    <Text style={styles.gameStatus}>{status}</Text>
+                  </View>
+                  <Text style={styles.gameDateText}>{date}</Text>
+                </View>
+                
+                <View style={styles.gameTeams}>
+                  <View style={styles.teamContainer}>
+                    <Text style={styles.teamName}>{homeTeam}</Text>
+                    <Text style={styles.teamScore}>{homeScore}</Text>
+                  </View>
+                  
+                  <Text style={styles.vsDivider}>VS</Text>
+                  
+                  <View style={styles.teamContainer}>
+                    <Text style={styles.teamName}>{awayTeam}</Text>
+                    <Text style={styles.teamScore}>{awayScore}</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.gameFooter}>
+                  <Ionicons name="basketball" size={14} color="#6b7280" />
+                  <Text style={styles.gameLeague}>{selectedSport}</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  };
+
+  const renderContent = () => {
+    if (currentSportData.error) {
+      return (
+        <View style={styles.errorContainer}>
+          <Ionicons name="warning" size={48} color="#ef4444" />
+          <Text style={styles.errorText}>Failed to load {selectedSport} data</Text>
+          <Text style={styles.errorSubtext}>{currentSportData.error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (currentSportData.isLoading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#14b8a6" />
+          <Text style={styles.loadingText}>Loading {selectedSport} analytics...</Text>
+        </View>
+      );
+    }
+
+    switch(selectedMetric) {
+      case 'overview':
+        return (
+          <>
+            {renderOverview()}
+            {renderTrendingStats()}
+            {renderRecentGames()}
+          </>
+        );
+      case 'advanced':
+        return renderAdvancedMetrics();
+      case 'trends':
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>📈 Trends Analysis</Text>
+            <View style={styles.comingSoonContainer}>
+              <Ionicons name="trending-up" size={48} color="#14b8a6" />
+              <Text style={styles.comingSoonText}>
+                Enhanced trends analysis with visualization charts coming soon!
+              </Text>
+              <Text style={styles.comingSoonSubtext}>
+                Track team performance over time, identify patterns, and get predictive insights.
+              </Text>
+            </View>
+          </View>
+        );
+      case 'teams':
+      case 'players':
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              {selectedMetric === 'teams' ? '🏀 Team Analysis' : '👤 Player Insights'}
+            </Text>
+            <View style={styles.comingSoonContainer}>
+              <Ionicons 
+                name={selectedMetric === 'teams' ? "people" : "person"} 
+                size={48} 
+                color="#14b8a6" 
+              />
+              <Text style={styles.comingSoonText}>
+                {selectedMetric === 'teams' ? 'Team comparison' : 'Player performance'} 
+                {' '}analytics coming soon!
+              </Text>
+              <Text style={styles.comingSoonSubtext}>
+                {selectedMetric === 'teams' 
+                  ? 'Compare teams, analyze matchups, and view detailed team statistics.'
+                  : 'Track player stats, shooting percentages, and performance trends.'
+                }
+              </Text>
+            </View>
+          </View>
+        );
+      default:
+        return (
+          <>
+            {renderOverview()}
+            {renderRecentGames()}
+          </>
+        );
+    }
+  };
+
+  const renderRefreshIndicator = () => (
+    <View style={styles.refreshIndicator}>
+      <Ionicons name="time-outline" size={14} color="#14b8a6" />
+      <Text style={styles.refreshText}>
+        Updated: {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      </Text>
+      <TouchableOpacity onPress={onRefresh} disabled={refreshing} style={styles.refreshButton}>
+        <Ionicons 
+          name="refresh" 
+          size={16} 
+          color={refreshing ? "#9ca3af" : "#14b8a6"} 
+          style={styles.refreshIcon}
+        />
+      </TouchableOpacity>
+    </View>
+  );
+
+  if (isLoading && !currentSportData.games) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#14b8a6" />
+        <Text style={styles.loadingText}>Loading sports analytics...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      refreshControl={
+        <RefreshControl 
+          refreshing={refreshing} 
+          onRefresh={onRefresh}
+          colors={['#14b8a6']}
+          tintColor="#14b8a6"
+        />
+      }
+      contentContainerStyle={styles.scrollContent}
+      style={styles.scrollView}
+    >
+      {renderHeader()}
+      {renderRefreshIndicator()}
+      
+      <View style={styles.searchSection}>
+        <SearchBar
+          placeholder={`Search ${selectedSport} games, teams, or players...`}
+          onSearch={handleAnalyticsSearch}
+          searchHistory={searchHistory}
+          style={styles.homeSearchBar}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
+
+      {renderSearchResults()}
+      {renderPrompts()}
+      {renderMetricTabs()}
+      {renderContent()}
+      
+      <View style={styles.footer}>
+        <Ionicons name="help-circle" size={16} color="#6b7280" />
+        <Text style={styles.footerText}>
+          Tip: Use prompts above for quick insights • Change sport for different analytics
+        </Text>
+      </View>
+    </ScrollView>
+  );
+};
+
+// ====== SECRET PHRASE ANALYTICS TAB ======
+const SecretPhraseAnalyticsTab = () => {
+  const [realTimeData, setRealTimeData] = useState([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const [analyticsStats, setAnalyticsStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('all');
+
+  useEffect(() => {
+    const simulateConnection = setTimeout(() => {
+      setIsConnected(true);
+    }, 1000);
+
+    const mockAnalyticsData = {
+      todaysStats: {
+        todaysEvents: 24,
+        todaysUnits: 12.5
+      },
+      categoryDistribution: [
+        { _id: 'statistical_arbitrage', count: 8, avgConfidence: 82.5 },
+        { _id: 'advanced_analytics', count: 6, avgConfidence: 75.2 },
+        { _id: 'situational_edge', count: 5, avgConfidence: 68.9 },
+        { _id: 'market_inefficiency', count: 3, avgConfidence: 91.3 },
+        { _id: 'historical_patterns', count: 2, avgConfidence: 79.4 }
+      ],
+      recentEvents: [
+        {
+          id: 1,
+          timestamp: new Date(),
+          phraseCategory: 'statistical_arbitrage',
+          phraseKey: 'Home team off back-to-back',
+          inputText: 'Lakers vs Warriors',
+          rarity: 'rare',
+          sport: 'NBA',
+          outcome: 'win',
+          unitsWon: 2.5
+        },
+        {
+          id: 2,
+          timestamp: new Date(Date.now() - 3600000),
+          phraseCategory: 'advanced_analytics',
+          phraseKey: 'Player efficiency spike',
+          inputText: 'Stephen Curry 3pt streak',
+          rarity: 'uncommon',
+          sport: 'NBA',
+          outcome: 'win',
+          unitsWon: 1.5
+        }
+      ]
+    };
+
+    const fetchData = () => {
+      setLoading(true);
+      setTimeout(() => {
+        setAnalyticsStats(mockAnalyticsData);
+        setRealTimeData(mockAnalyticsData.recentEvents || []);
+        setLoading(false);
+      }, 1500);
+    };
+
+    fetchData();
+
+    return () => {
+      clearTimeout(simulateConnection);
+    };
+  }, []);
+
+  const fetchAnalyticsData = async () => {
+    try {
+      setLoading(true);
+      setTimeout(() => {
+        const mockData = {
+          success: true,
+          data: {
+            todaysStats: {
+              todaysEvents: 24,
+              todaysUnits: 12.5
+            },
+            categoryDistribution: [
+              { _id: 'statistical_arbitrage', count: 8, avgConfidence: 82.5 },
+              { _id: 'advanced_analytics', count: 6, avgConfidence: 75.2 },
+              { _id: 'situational_edge', count: 5, avgConfidence: 68.9 }
+            ],
+            recentEvents: [
+              {
+                id: Date.now(),
+                timestamp: new Date(),
+                phraseCategory: 'statistical_arbitrage',
+                phraseKey: 'New event added',
+                inputText: 'Test input',
+                rarity: 'common',
+                sport: 'NBA',
+                outcome: 'pending'
+              }
+            ]
+          }
+        };
+        setAnalyticsStats(mockData.data);
+        setRealTimeData(prev => [...mockData.data.recentEvents, ...prev.slice(0, 8)]);
+        setLoading(false);
+        setRefreshing(false);
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to fetch phrase analytics:', error);
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchAnalyticsData();
+  };
+
+  const getCategoryColor = (category) => {
+    const colors = {
+      'statistical_arbitrage': '#3B82F6',
+      'advanced_analytics': '#8B5CF6',
+      'situational_edge': '#10B981',
+      'market_inefficiency': '#F59E0B',
+      'historical_patterns': '#6366F1',
+      'player_specific': '#EC4899',
+      'injury_impact': '#EF4444',
+      'live_betting': '#14B8A6',
+    };
+    return colors[category] || '#6B7280';
+  };
+
+  const getRarityLabel = (rarity) => {
+    const labels = {
+      'common': 'Common',
+      'uncommon': 'Uncommon',
+      'rare': 'Rare',
+      'legendary': 'Legendary',
+    };
+    return labels[rarity] || 'Common';
+  };
+
+  const getRarityColor = (rarity) => {
+    const colors = {
+      'common': '#9CA3AF',
+      'uncommon': '#10B981',
+      'rare': '#3B82F6',
+      'legendary': '#8B5CF6',
+    };
+    return colors[rarity] || '#9CA3AF';
+  };
+
+  const filteredData = selectedCategory === 'all' 
+    ? realTimeData 
+    : realTimeData.filter(item => item.phraseCategory === selectedCategory);
+
+  const renderEventItem = ({ item }) => (
+    <View style={styles.secretEventCard}>
+      <View style={styles.eventHeader}>
+        <Text style={styles.eventTime}>
+          {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+        <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(item.phraseCategory) }]}>
+          <Text style={styles.categoryText}>{item.phraseCategory?.replace('_', ' ')}</Text>
+        </View>
+      </View>
+      
+      <Text style={styles.phraseText} numberOfLines={1}>{item.phraseKey || 'N/A'}</Text>
+      
+      {item.inputText && (
+        <Text style={styles.inputText} numberOfLines={2}>{item.inputText}</Text>
+      )}
+      
+      <View style={styles.eventFooter}>
+        <View style={[styles.rarityBadge, { backgroundColor: getRarityColor(item.rarity) }]}>
+          <Text style={styles.rarityText}>{getRarityLabel(item.rarity)}</Text>
+        </View>
+        
+        <Text style={styles.sportText}>{item.sport || 'N/A'}</Text>
+        
+        {item.outcome && (
+          <View style={[
+            styles.outcomeBadge,
+            { backgroundColor: item.outcome === 'win' ? '#10B981' : item.outcome === 'loss' ? '#EF4444' : '#F59E0B' }
+          ]}>
+            <Text style={styles.outcomeText}>
+              {item.outcome.toUpperCase()}
+              {item.unitsWon && item.outcome === 'win' && ` (+${item.unitsWon})`}
+            </Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+        <Text style={styles.loadingText}>Loading secret phrase analytics...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView 
+      style={styles.secretContainer}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
+      <View style={styles.secretHeader}>
+        <View>
+          <Text style={styles.secretTitle}>Secret Phrase Analytics</Text>
+          <View style={styles.connectionRow}>
+            <View style={[styles.statusDot, { backgroundColor: isConnected ? '#10B981' : '#EF4444' }]} />
+            <Text style={styles.connectionText}>
+              {isConnected ? 'Connected to live feed' : 'Disconnected'}
+            </Text>
+          </View>
+        </View>
+        
+        {analyticsStats && (
+          <View style={styles.secretStatsContainer}>
+            <Text style={styles.statsTitle}>Today's Activity</Text>
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{analyticsStats.todaysStats?.todaysEvents || 0}</Text>
+                <Text style={styles.statLabel}>Events</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{analyticsStats.todaysStats?.todaysUnits || 0}</Text>
+                <Text style={styles.statLabel}>Units</Text>
+              </View>
+            </View>
+          </View>
+        )}
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+        <TouchableOpacity
+          style={[styles.categoryButton, selectedCategory === 'all' && styles.categoryButtonActive]}
+          onPress={() => setSelectedCategory('all')}
+        >
+          <Text style={[styles.categoryButtonText, selectedCategory === 'all' && styles.categoryButtonTextActive]}>
+            All Categories
+          </Text>
+        </TouchableOpacity>
+        
+        {analyticsStats?.categoryDistribution?.map(cat => (
+          <TouchableOpacity
+            key={cat._id}
+            style={[
+              styles.categoryButton,
+              selectedCategory === cat._id && styles.categoryButtonActive,
+              { backgroundColor: getCategoryColor(cat._id) }
+            ]}
+            onPress={() => setSelectedCategory(cat._id)}
+          >
+            <Text style={[styles.categoryButtonText, selectedCategory === cat._id && styles.categoryButtonTextActive]}>
+              {cat._id.replace('_', ' ')}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      <View style={styles.secretSection}>
+        <Text style={styles.secretSectionTitle}>Recent Events</Text>
+        <FlatList
+          data={filteredData}
+          renderItem={renderEventItem}
+          keyExtractor={(item, index) => item.id ? item.id.toString() : index.toString()}
+          scrollEnabled={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>
+                No events found. Secret phrases will appear here as they're used.
+              </Text>
+            </View>
+          }
+        />
+      </View>
+
+      {analyticsStats?.categoryDistribution && analyticsStats.categoryDistribution.length > 0 && (
+        <View style={styles.secretSection}>
+          <Text style={styles.secretSectionTitle}>Performance by Category</Text>
+          <View style={styles.performanceGrid}>
+            {analyticsStats.categoryDistribution.slice(0, 4).map(cat => (
+              <View key={cat._id} style={styles.performanceCard}>
+                <Text style={styles.performanceCategory}>{cat._id.replace('_', ' ')}</Text>
+                <Text style={styles.performanceCount}>{cat.count} events</Text>
+                <Text style={styles.performanceConfidence}>
+                  {cat.avgConfidence ? cat.avgConfidence.toFixed(1) : '0'}% avg confidence
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+    </ScrollView>
+  );
+};
+
+// ====== MAIN ANALYTICS SCREEN COMPONENT ======
+export default function AnalyticsScreenEnhanced({ navigation, route }) {
+  const [activeTab, setActiveTab] = useState('general');
+  
+  React.useEffect(() => {
+    if (route.params?.openSecretPhrasesTab) {
+      setActiveTab('secretPhrases');
+    }
+  }, [route.params]);
+
+  const renderTabContent = () => {
+    switch(activeTab) {
+      case 'secretPhrases':
+        return <SecretPhraseAnalyticsTab />;
+      case 'general':
+      default:
+        return <GeneralAnalyticsTab />;
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.customTabContainer}>
+        <TouchableOpacity 
+          style={[styles.customTab, activeTab === 'general' && styles.activeCustomTab]}
+          onPress={() => setActiveTab('general')}
+        >
+          <Text style={[styles.customTabText, activeTab === 'general' && styles.activeCustomTabText]}>
+            Sports Analytics
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.customTab, activeTab === 'secretPhrases' && styles.activeCustomTab]}
+          onPress={() => setActiveTab('secretPhrases')}
+        >
+          <Text style={[styles.customTabText, activeTab === 'secretPhrases' && styles.activeCustomTabText]}>
+            Secret Phrases
+          </Text>
+        </TouchableOpacity>
+      </View>
+      
+      <View style={styles.tabContent}>
+        {renderTabContent()}
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  customTabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  customTab: {
+    flex: 1,
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderBottomWidth: 3,
+    borderBottomColor: 'transparent',
+  },
+  activeCustomTab: {
+    borderBottomColor: '#14b8a6',
+  },
+  customTabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  activeCustomTabText: {
+    color: '#14b8a6',
+  },
+  tabContent: {
+    flex: 1,
+  },
+  // General Analytics Styles
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  scrollView: {
+    backgroundColor: '#f8fafc',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    backgroundColor: '#f8fafc',
+    paddingBottom: 20,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#4b5563',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
+    backgroundColor: '#0f766e',
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
+    marginLeft: 12,
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  headerIconContainer: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    padding: 12,
+    borderRadius: 16,
+    marginRight: 15,
+  },
+  headerTextContainer: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: 'white',
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  sportsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  sportButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  activeSportButton: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  sportText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  activeSportText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  activeIndicator: {
+    position: 'absolute',
+    bottom: -10,
+    width: 4,
+    height: 4,
+    backgroundColor: 'white',
+    borderRadius: 2,
+  },
+  refreshIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  refreshText: {
+    fontSize: 13,
+    color: '#4b5563',
+    marginLeft: 8,
+    fontWeight: '500',
+  },
+  refreshButton: {
+    marginLeft: 12,
+    padding: 4,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+  },
+  refreshIcon: {
+    padding: 4,
+  },
+  searchSection: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+  },
+  homeSearchBar: {
+    marginBottom: 12,
+  },
+  searchResultsContainer: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    backgroundColor: 'white',
+    borderRadius: 12,
+  },
+  searchResultsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    padding: 16,
+    paddingBottom: 0,
+  },
+  searchResultsTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2937',
+    flex: 1,
+  },
+  searchResultItem: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  gameInfo: {
+    flex: 1,
+  },
+  gameTeamsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  homeTeam: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  vsText: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginHorizontal: 8,
+    fontWeight: '600',
+  },
+  awayTeam: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  gameMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  gameDate: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginRight: 12,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  finalBadge: {
+    backgroundColor: '#f0fdf4',
+  },
+  scheduledBadge: {
+    backgroundColor: '#fef3c7',
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  gameScore: {
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  scoreText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  promptsContainer: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  promptsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  promptsTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  promptsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginLeft: 8,
+  },
+  promptsToggle: {
+    padding: 4,
+  },
+  promptCategories: {
+    marginBottom: 16,
+  },
+  promptCategoryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 12,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  activePromptCategory: {
+    backgroundColor: '#14b8a6',
+    borderColor: '#0f766e',
+  },
+  promptCategoryText: {
+    fontSize: 13,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  activePromptCategoryText: {
+    color: 'white',
+  },
+  promptsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -4,
+    marginBottom: 12,
+  },
+  promptChip: {
+    width: '50%',
+    padding: 4,
+  },
+  promptChipContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#f8fafc',
+  },
+  promptChipText: {
+    fontSize: 13,
+    color: '#4b5563',
+    marginLeft: 8,
+    flex: 1,
+    fontWeight: '500',
+  },
+  usageTips: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#f0fdf4',
+    padding: 12,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#14b8a6',
+  },
+  usageTipsText: {
+    fontSize: 12,
+    color: '#065f46',
+    flex: 1,
+    marginLeft: 8,
+    lineHeight: 16,
+    fontWeight: '500',
+  },
+  metricsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  metricTab: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    minWidth: 70,
+  },
+  metricTabContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#14b8a6',
+  },
+  metricIcon: {
+    marginRight: 6,
+  },
+  metricText: {
+    fontSize: 13,
+    color: '#6b7280',
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  activeMetricText: {
+    fontSize: 13,
+    color: 'white',
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  section: {
+    margin: 20,
+    marginTop: 0,
+    backgroundColor: '#f8fafc',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  viewAllText: {
+    fontSize: 13,
+    color: '#14b8a6',
+    fontWeight: '600',
+  },
+  overviewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  overviewCard: {
+    width: '48%',
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  overviewValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginVertical: 8,
+  },
+  overviewLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  keyTrendsSection: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  keyTrendsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 12,
+  },
+  trendCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#f0fdf4',
+    padding: 12,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#14b8a6',
+  },
+  trendText: {
+    fontSize: 14,
+    color: '#4b5563',
+    flex: 1,
+    marginLeft: 10,
+    lineHeight: 20,
+    fontWeight: '500',
+  },
+  trendingStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  trendingStatCard: {
+    width: '48%',
+    marginBottom: 12,
+  },
+  trendingStatContent: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    position: 'relative',
+    backgroundColor: '#f8fafc',
+  },
+  trendingStatLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  trendingStatValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  trendingIcon: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+  },
+  advancedGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  advancedMetricCard: {
+    width: '48%',
+    marginBottom: 12,
+  },
+  advancedMetricContent: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: 'white',
+  },
+  advancedMetricLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  advancedMetricValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  metricProgress: {
+    height: 4,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#10b981',
+  },
+  gameCard: {
+    marginBottom: 12,
+  },
+  gameCardContent: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: 'white',
+  },
+  gameHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  gameStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  finalDot: {
+    backgroundColor: '#10b981',
+  },
+  liveDot: {
+    backgroundColor: '#ef4444',
+  },
+  gameStatus: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  gameDateText: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  gameTeams: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  teamContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  teamName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  teamScore: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#ef4444',
+  },
+  vsDivider: {
+    fontSize: 12,
+    color: '#9ca3af',
+    fontWeight: 'bold',
+    marginHorizontal: 16,
+  },
+  gameFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gameLeague: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  comingSoonContainer: {
+    backgroundColor: 'white',
+    padding: 32,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  comingSoonText: {
+    fontSize: 16,
+    color: '#1f2937',
+    textAlign: 'center',
+    marginTop: 16,
+    lineHeight: 24,
+    fontWeight: '600',
+  },
+  comingSoonSubtext: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  errorContainer: {
+    backgroundColor: '#fef2f2',
+    padding: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    margin: 20,
+    borderWidth: 1,
+    borderColor: '#fee2e2',
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#dc2626',
+    marginVertical: 12,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    padding: 40,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    paddingHorizontal: 20,
+    backgroundColor: '#f8fafc',
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    marginTop: 20,
+  },
+  footerText: {
+    fontSize: 13,
+    color: '#6b7280',
+    flex: 1,
+    marginLeft: 8,
+    fontWeight: '500',
+  },
+
+  // Secret Phrase Analytics Styles
+  secretContainer: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    padding: 16,
+  },
+  secretHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    marginBottom: 16,
+  },
+  secretTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  connectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  connectionText: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  secretStatsContainer: {
+    alignItems: 'flex-end',
+  },
+  statsTitle: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  statsRow: {
+    flexDirection: 'row',
+  },
+  statItem: {
+    marginLeft: 16,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 2,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  secretEventCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  eventHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  eventTime: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  categoryBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  categoryText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  phraseText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  inputText: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
+  eventFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rarityBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  rarityText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  sportText: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  outcomeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  outcomeText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  categoryScroll: {
+    paddingBottom: 12,
+    marginBottom: 16,
+  },
+  categoryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#e5e7eb',
+    marginRight: 8,
+  },
+  categoryButtonActive: {
+    backgroundColor: '#3B82F6',
+  },
+  categoryButtonText: {
+    fontSize: 14,
+    color: '#1f2937',
+    fontWeight: '500',
+  },
+  categoryButtonTextActive: {
+    color: '#FFFFFF',
+  },
+  secretSection: {
+    marginBottom: 24,
+  },
+  secretSectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 16,
+  },
+  emptyContainer: {
+    padding: 24,
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  performanceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  performanceCard: {
+    width: '48%',
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  performanceCategory: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  performanceCount: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  performanceConfidence: {
+    fontSize: 12,
+    color: '#3B82F6',
+    fontWeight: '500',
+  },
+});

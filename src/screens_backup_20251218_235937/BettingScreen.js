@@ -1,0 +1,315 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  RefreshControl,
+  ActivityIndicator 
+} from 'react-native';
+
+const EnhancedBettingScreen = () => {
+  const [bettingData, setBettingData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    loadBettingData();
+  }, []);
+
+  const loadBettingData = async () => {
+    try {
+      // Mock enhanced betting data
+      setTimeout(() => {
+        setBettingData({
+          aiPredictions: [
+            {
+              game: "Lakers vs Warriors",
+              prediction: "Lakers ML",
+              confidence: 78,
+              edge: "5.2%",
+              reasoning: "Strong home court advantage and recent form",
+              risk: "Medium"
+            },
+            {
+              game: "Celtics vs Heat", 
+              prediction: "Over 215.5 points",
+              confidence: 65,
+              edge: "3.8%",
+              reasoning: "Both teams high-scoring in recent matchups",
+              risk: "Low"
+            }
+          ],
+          playerProps: [
+            {
+              player: "LeBron James",
+              prop: "Over 25.5 points",
+              confidence: "High",
+              currentOdds: "-115"
+            },
+            {
+              player: "Stephen Curry",
+              prop: "Over 4.5 threes", 
+              confidence: "Medium",
+              currentOdds: "+110"
+            }
+          ],
+          arbitrage: [
+            {
+              game: "Lakers vs Warriors",
+              bet: "Lakers ML",
+              book1: "DraftKings",
+              odds1: "-150",
+              book2: "FanDuel", 
+              odds2: "+130",
+              profit: "3.2%"
+            }
+          ]
+        });
+        setLoading(false);
+        setRefreshing(false);
+      }, 1000);
+    } catch (error) {
+      console.error('Error loading betting data:', error);
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadBettingData();
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text>Loading enhanced betting insights...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView 
+      style={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
+      <Text style={styles.title}>Enhanced Betting Analysis</Text>
+      
+      {bettingData?.aiPredictions && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🤖 AI Predictions</Text>
+          {bettingData.aiPredictions.map((prediction, index) => (
+            <View key={index} style={styles.card}>
+              <Text style={styles.game}>{prediction.game}</Text>
+              <Text style={styles.prediction}>{prediction.prediction}</Text>
+              <View style={styles.confidenceBar}>
+                <View 
+                  style={[
+                    styles.confidenceFill, 
+                    { width: `${prediction.confidence}%` }
+                  ]} 
+                />
+              </View>
+              <Text style={styles.confidenceText}>
+                Confidence: {prediction.confidence}%
+              </Text>
+              <Text style={styles.edge}>Edge: {prediction.edge}</Text>
+              <Text style={styles.reasoning}>{prediction.reasoning}</Text>
+              <Text style={[styles.risk, { color: prediction.risk === 'High' ? '#ef4444' : prediction.risk === 'Medium' ? '#f59e0b' : '#10b981' }]}>
+                Risk: {prediction.risk}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {bettingData?.playerProps && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🎯 Player Props</Text>
+          {bettingData.playerProps.map((prop, index) => (
+            <View key={index} style={styles.card}>
+              <Text style={styles.playerName}>{prop.player}</Text>
+              <Text style={styles.prop}>{prop.prop}</Text>
+              <Text style={[styles.confidence, { color: prop.confidence === 'High' ? '#10b981' : prop.confidence === 'Medium' ? '#f59e0b' : '#ef4444' }]}>
+                Confidence: {prop.confidence}
+              </Text>
+              <Text style={styles.odds}>Current Odds: {prop.currentOdds}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {bettingData?.arbitrage && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>💰 Arbitrage Opportunities</Text>
+          {bettingData.arbitrage.map((arb, index) => (
+            <View key={index} style={styles.card}>
+              <Text style={styles.game}>{arb.game}</Text>
+              <Text style={styles.bet}>{arb.bet}</Text>
+              <View style={styles.arbitrageRow}>
+                <Text style={styles.book}>{arb.book1}: {arb.odds1}</Text>
+                <Text style={styles.book}>{arb.book2}: {arb.odds2}</Text>
+              </View>
+              <Text style={styles.profit}>Profit: {arb.profit}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <View style={styles.infoSection}>
+        <Text style={styles.infoTitle}>About Enhanced Betting</Text>
+        <Text style={styles.infoText}>
+          • AI predictions use machine learning models analyzing team performance, player stats, and historical data
+        </Text>
+        <Text style={styles.infoText}>
+          • Player props are based on matchup analysis and recent performance trends
+        </Text>
+        <Text style={styles.infoText}>
+          • Arbitrage opportunities identify price differences across sportsbooks
+        </Text>
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: '#f8fafc',
+  },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#1e293b',
+  },
+  section: {
+    marginBottom: 30,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    color: '#334155',
+  },
+  card: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  game: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 8,
+  },
+  prediction: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#059669',
+    marginBottom: 10,
+  },
+  confidenceBar: {
+    height: 8,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 4,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  confidenceFill: {
+    height: '100%',
+    backgroundColor: '#10b981',
+    borderRadius: 4,
+  },
+  confidenceText: {
+    fontSize: 14,
+    color: '#64748b',
+    marginBottom: 4,
+  },
+  edge: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#dc2626',
+    marginBottom: 8,
+  },
+  reasoning: {
+    fontSize: 14,
+    color: '#475569',
+    fontStyle: 'italic',
+    marginBottom: 8,
+  },
+  risk: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  playerName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  prop: {
+    fontSize: 16,
+    color: '#3b82f6',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  confidence: {
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  odds: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  arbitrageRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  book: {
+    fontSize: 14,
+    color: '#4b5563',
+  },
+  profit: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#059669',
+  },
+  infoSection: {
+    backgroundColor: '#dbeafe',
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 20,
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1e40af',
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#374151',
+    marginBottom: 4,
+  },
+});
+
+export default BettingScreen;

@@ -1,0 +1,310 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  RefreshControl,
+  ActivityIndicator 
+} from 'react-native';
+import ApiService from '../services/api-service';
+
+const LiveGamesScreen = () => {
+  const [games, setGames] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
+
+  useEffect(() => {
+    loadGames();
+  }, []);
+
+  const loadGames = async () => {
+    try {
+      console.log('🔄 LiveGamesScreen: Loading games...');
+      const gamesData = await ApiService.getTodayGames();
+      console.log('✅ LiveGamesScreen: Games data loaded successfully');
+      setGames(gamesData);
+      setIsOnline(true);
+    } catch (error) {
+      console.log('❌ LiveGamesScreen: API request failed, using fallback data');
+      setGames(mockGamesData);
+      setIsOnline(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Mock games data for fallback
+  const mockGamesData = [
+    {
+      id: 1,
+      home_team: 'Lakers',
+      away_team: 'Warriors',
+      home_score: 98,
+      away_score: 102,
+      period: '4th Qtr',
+      time_remaining: '2:45',
+      status: 'in_progress',
+      time: '7:30 PM ET'
+    },
+    {
+      id: 2,
+      home_team: 'Celtics',
+      away_team: 'Heat',
+      home_score: 115,
+      away_score: 110,
+      period: 'Final',
+      time_remaining: '',
+      status: 'final',
+      time: '8:00 PM ET'
+    },
+    {
+      id: 3,
+      home_team: 'Nuggets',
+      away_team: 'Suns',
+      home_score: 0,
+      away_score: 0,
+      period: 'Upcoming',
+      time_remaining: '',
+      status: 'scheduled',
+      time: '9:30 PM ET'
+    }
+  ];
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadGames();
+    setRefreshing(false);
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'in_progress': return '#ef4444';
+      case 'final': return '#64748b';
+      case 'scheduled': return '#3b82f6';
+      default: return '#64748b';
+    }
+  };
+
+  const getStatusText = (status) => {
+    switch (status) {
+      case 'in_progress': return 'LIVE';
+      case 'final': return 'FINAL';
+      case 'scheduled': return 'UPCOMING';
+      default: return status;
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Loading live games...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView 
+      style={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+    >
+      <View style={styles.header}>
+        <Text style={styles.title}>NBA Games</Text>
+        <View style={[styles.connectionIndicator, { 
+          backgroundColor: isOnline ? '#22c55e' : '#ef4444' 
+        }]}>
+          <Text style={styles.connectionText}>
+            {isOnline ? 'LIVE' : 'OFFLINE'}
+          </Text>
+        </View>
+      </View>
+
+      {games.map((game, index) => { const key = `game-${index}`; return (
+        <View key={game.id} style={styles.gameCard}>
+          <View style={styles.gameHeader}>
+            <Text style={[styles.status, { color: getStatusColor(game.status) }]}>
+              {getStatusText(game.status)}
+            </Text>
+            <Text style={styles.gameTime}>{game.time}</Text>
+          </View>
+          
+          <View style={styles.teamsContainer}>
+            <View style={styles.team}>
+              <Text style={styles.teamName}>{game.home_team}</Text>
+              <Text style={styles.score}>{game.home_score}</Text>
+            </View>
+            
+            <View style={styles.vsContainer}>
+              <Text style={styles.vs}>VS</Text>
+              {game.status === 'in_progress' && (
+                <Text style={styles.gamePeriod}>
+                  {game.period} {game.time_remaining}
+                </Text>
+              )}
+            </View>
+            
+            <View style={styles.team}>
+              <Text style={styles.teamName}>{game.away_team}</Text>
+              <Text style={styles.score}>{game.away_score}</Text>
+            </View>
+          </View>
+        </View>
+      ))}
+      
+      {games.length === 0 && (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>No games scheduled today</Text>
+          <Text style={styles.emptySubtext}>
+            Check back later for NBA games
+          </Text>
+        </View>
+      )}
+
+      {/* Offline mode indicator */}
+      {!isOnline && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineText}>
+            📱 Offline Mode - Showing cached data
+          </Text>
+        </View>
+      )}
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: '#f8fafc',
+  },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#64748b',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  connectionIndicator: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  connectionText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  gameCard: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  gameHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  status: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  gameTime: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  teamsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  team: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  teamName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  score: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  vsContainer: {
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  vs: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#64748b',
+    marginBottom: 4,
+  },
+  gamePeriod: {
+    fontSize: 10,
+    color: '#64748b',
+    textAlign: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    fontSize: 18,
+    color: '#64748b',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+  },
+  offlineBanner: {
+    backgroundColor: '#fef3c7',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#d97706',
+  },
+  offlineText: {
+    color: '#92400e',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+});
+
+export default LiveGamesScreen;

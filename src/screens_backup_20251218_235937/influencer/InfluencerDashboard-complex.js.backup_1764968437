@@ -1,0 +1,362 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  Dimensions,
+} from 'react-native';
+import { LineChart } from 'react-native-chart-kit';
+import apiService from '../../services/apiService';
+
+const InfluencerDashboard = () => {
+  const [influencerId, setInfluencerId] = useState('1');
+  const [analytics, setAnalytics] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [newCode, setNewCode] = useState('');
+  const [commissionRate, setCommissionRate] = useState('15');
+
+  useEffect(() => {
+    loadAnalytics();
+  }, [influencerId]);
+
+  const loadAnalytics = async () => {
+    setLoading(true);
+    try {
+      const response = await apiService.get(`/influencer/${influencerId}/analytics`);
+      setAnalytics(response);
+    } catch (error) {
+      console.error('Error loading analytics:', error);
+      Alert.alert('Error', 'Failed to load influencer analytics');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateCode = async () => {
+    if (!newCode.trim() && !analytics?.influencer?.username) {
+      Alert.alert('Error', 'Please enter a code or use suggested one');
+      return;
+    }
+
+    const codeToGenerate = newCode.trim() || `${analytics.influencer.username.toUpperCase()}${Date.now().toString(36)}`;
+    
+    try {
+      const response = await apiService.post('/influencer/generate-code', {
+        influencerId: parseInt(influencerId),
+        code: codeToGenerate,
+        commissionRate: parseFloat(commissionRate)
+      });
+      
+      Alert.alert('Success', `Code generated: ${response.code.code}`);
+      setNewCode('');
+      loadAnalytics();
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Failed to generate code');
+    }
+  };
+
+  const renderChart = () => {
+    if (!analytics?.dailyStats || analytics.dailyStats.length === 0) {
+      return (
+        <View style={styles.chartPlaceholder}>
+          <Text style={styles.placeholderText}>No commission data yet</Text>
+        </View>
+      );
+    }
+
+    const data = {
+      labels: analytics.dailyStats.slice(0, 7).reverse().map(stat => 
+        new Date(stat.date).getDate().toString()
+      ),
+      datasets: [{
+        data: analytics.dailyStats.slice(0, 7).reverse().map(stat => 
+          parseFloat(stat.daily_commission) || 0
+        ),
+      }]
+    };
+
+    return (
+      <LineChart
+        data={data}
+        width={Dimensions.get('window').width - 60}
+        height={220}
+        chartConfig={{
+          backgroundColor: '#ffffff',
+          backgroundGradientFrom: '#ffffff',
+          backgroundGradientTo: '#ffffff',
+          decimalPlaces: 0,
+          color: (opacity = 1) => `rgba(26, 35, 126, ${opacity})`,
+          labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+          style: { borderRadius: 16 },
+          propsForDots: { r: '6', strokeWidth: '2', stroke: '#1a237e' }
+        }}
+        bezier
+        style={styles.chart}
+      />
+    );
+  };
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>👑 Influencer Dashboard</Text>
+        <TextInput
+          style={styles.userIdInput}
+          value={influencerId}
+          onChangeText={setInfluencerId}
+          placeholder="Influencer ID"
+          keyboardType="numeric"
+        />
+      </View>
+
+      {loading ? (
+        <Text style={styles.loadingText}>Loading analytics...</Text>
+      ) : analytics ? (
+        <>
+          {/* Summary Cards */}
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryValue}>${analytics.influencer?.total_commission?.toFixed(2) || '0.00'}</Text>
+              <Text style={styles.summaryLabel}>Total Commission</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryValue}>{analytics.influencer?.referral_count || 0}</Text>
+              <Text style={styles.summaryLabel}>Total Referrals</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryValue}>{analytics.summary?.totalCodes || 0}</Text>
+              <Text style={styles.summaryLabel}>Active Codes</Text>
+            </View>
+          </View>
+
+          {/* Commission Chart */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Commission History (Last 7 Days)</Text>
+            {renderChart()}
+          </View>
+
+          {/* Generate New Code */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Generate New Code</Text>
+            <TextInput
+              style={styles.input}
+              value={newCode}
+              onChangeText={setNewCode}
+              placeholder="Enter custom code or leave empty for auto-generate"
+            />
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, styles.commissionInput]}
+                value={commissionRate}
+                onChangeText={setCommissionRate}
+                placeholder="Commission %"
+                keyboardType="numeric"
+              />
+              <Text style={styles.percentSymbol}>%</Text>
+            </View>
+            <TouchableOpacity style={styles.generateButton} onPress={handleGenerateCode}>
+              <Text style={styles.generateButtonText}>Generate Influencer Code</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Active Codes */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Your Active Codes</Text>
+            {analytics.codes.length === 0 ? (
+              <Text style={styles.emptyText}>No active codes</Text>
+            ) : (
+              analytics.codes.map((code, index) => (
+                <View key={index} style={styles.codeCard}>
+                  <View style={styles.codeHeader}>
+                    <Text style={styles.codeText}>{code.code}</Text>
+                    <Text style={styles.commissionRate}>{code.commission_rate}% commission</Text>
+                  </View>
+                  <View style={styles.codeStats}>
+                    <Text style={styles.codeStat}>Uses: {code.uses_count}</Text>
+                    <Text style={styles.codeStat}>Earned: ${code.total_commission?.toFixed(2) || '0.00'}</Text>
+                    <Text style={styles.codeDate}>
+                      Created: {new Date(code.created_at).toLocaleDateString()}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        </>
+      ) : (
+        <Text style={styles.emptyText}>No influencer data found for ID: {influencerId}</Text>
+      )}
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  header: {
+    backgroundColor: '#1a237e',
+    padding: 20,
+    paddingTop: 40,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 10,
+  },
+  userIdInput: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 10,
+    width: 120,
+    textAlign: 'center',
+    fontSize: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    padding: 10,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: 'white',
+    margin: 5,
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  summaryValue: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1a237e',
+  },
+  summaryLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 5,
+  },
+  card: {
+    backgroundColor: 'white',
+    margin: 10,
+    padding: 20,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 15,
+  },
+  chart: {
+    marginVertical: 8,
+    borderRadius: 16,
+  },
+  chartPlaceholder: {
+    height: 220,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 16,
+  },
+  placeholderText: {
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 10,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  commissionInput: {
+    flex: 1,
+    marginRight: 10,
+  },
+  percentSymbol: {
+    fontSize: 18,
+    color: '#666',
+  },
+  generateButton: {
+    backgroundColor: '#1a237e',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  generateButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  codeCard: {
+    backgroundColor: '#f8f9fa',
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  codeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  codeText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1a237e',
+  },
+  commissionRate: {
+    fontSize: 14,
+    color: '#28a745',
+    fontWeight: '600',
+  },
+  codeStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  codeStat: {
+    fontSize: 14,
+    color: '#666',
+  },
+  codeDate: {
+    fontSize: 12,
+    color: '#999',
+  },
+  loadingText: {
+    textAlign: 'center',
+    padding: 20,
+    color: '#666',
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: '#666',
+    fontStyle: 'italic',
+    padding: 20,
+  },
+});
+
+export default InfluencerDashboard;

@@ -1,0 +1,2213 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  Dimensions,
+  Animated,
+  Share,
+  Alert,
+  Platform,
+  RefreshControl,
+  Modal,
+  TextInput,
+  FlatList
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import { LineChart, BarChart } from 'react-native-chart-kit';
+import LinearGradient from 'react-native-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const { width } = Dimensions.get('window');
+
+// UPDATED: Simplified analytics function that works everywhere
+const logAnalyticsEvent = async (eventName, eventParams = {}) => {
+  try {
+    // Always create the event data
+    const eventData = {
+      event: eventName,
+      params: eventParams,
+      timestamp: new Date().toISOString(),
+      platform: Platform.OS,
+    };
+
+    // Only log to console in development mode
+    if (__DEV__) {
+      console.log(`📊 Analytics Event: ${eventName}`, eventParams);
+    }
+
+    // Only use Firebase analytics on web in production mode
+    if (Platform.OS === 'web' && !__DEV__ && typeof window !== 'undefined') {
+      try {
+        // Dynamically import Firebase only on web in production
+        const firebaseApp = await import('firebase/app');
+        const firebaseAnalytics = await import('firebase/analytics');
+        
+        // Get or initialize Firebase app
+        let app;
+        if (firebaseApp.getApps().length === 0) {
+          const firebaseConfig = {
+            apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyCi7YQ-vawFT3sIr1i8yuhhx-1vSplAneA",
+            authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "nba-fantasy-ai.firebaseapp.com",
+            projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "nba-fantasy-ai",
+            storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "nba-fantasy-ai.appspot.com",
+            messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "718718403866",
+            appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:718718403866:web:e26e10994d62799a048379",
+            measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-BLTPX9LJ7K"
+          };
+          
+          app = firebaseApp.initializeApp(firebaseConfig);
+        } else {
+          app = firebaseApp.getApp();
+        }
+        
+        // Get analytics and log event
+        const analytics = firebaseAnalytics.getAnalytics(app);
+        if (analytics) {
+          await firebaseAnalytics.logEvent(analytics, eventName, eventParams);
+        }
+      } catch (firebaseError) {
+        // Silently fail for Firebase errors in production
+        console.warn('Firebase analytics error:', firebaseError.message);
+      }
+    }
+    
+    // Always log to AsyncStorage for debugging (both dev and prod)
+    try {
+      const existingEvents = JSON.parse(await AsyncStorage.getItem('analytics_events') || '[]');
+      existingEvents.push(eventData);
+      if (existingEvents.length > 100) {
+        existingEvents.splice(0, existingEvents.length - 100);
+      }
+      await AsyncStorage.setItem('analytics_events', JSON.stringify(existingEvents));
+    } catch (storageError) {
+      // Non-critical error, just log it
+      console.warn('Could not save analytics event locally:', storageError.message);
+    }
+  } catch (error) {
+    // Non-critical analytics failure
+    console.warn('Analytics event failed:', error.message);
+  }
+};
+
+export default function GameDetailsScreen() {
+  const route = useRoute();
+  const navigation = useNavigation();
+  
+  // FIXED: Check for params properly and provide fallbacks
+  const params = route.params || {};
+  const gameId = params.gameId || 'mock-game-123'; // Provide default gameId
+  const gameData = params.gameData || null;
+  
+  const [game, setGame] = useState(gameData || null);
+  const [loading, setLoading] = useState(!gameData);
+  const [activeTab, setActiveTab] = useState('conditions');
+  const [fadeAnim] = useState(new Animated.Value(0)); // FIXED: This line was missing
+  const [refreshing, setRefreshing] = useState(false);
+  const [showAdvancedStats, setShowAdvancedStats] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  
+  // ADD THESE FOR SIMPLE SEARCH
+  const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+
+  // Log screen view on mount
+  useEffect(() => {
+    // FIXED: Log with actual values or fallbacks
+    logAnalyticsEvent('game_details_screen_view', {
+      game_id: gameId,
+      home_team: game?.homeTeam?.name || gameData?.homeTeam?.name || 'Unknown Team',
+      away_team: game?.awayTeam?.name || gameData?.awayTeam?.name || 'Unknown Team',
+    });
+    
+    // FIXED: Always fetch game details if not provided
+    if (!gameData) {
+      fetchGameDetails();
+    } else {
+      setLoading(false);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, []);
+
+  const fetchGameDetails = async () => {
+    setLoading(true);
+    
+    // Log analytics for data load
+    await logAnalyticsEvent('game_details_data_load', {
+      game_id: gameId,
+      action: 'initial_load',
+    });
+    
+    try {
+      // Enhanced Mock Data with conditions, stadium, and H2H
+      const mockGameDetails = {
+        id: gameId,
+        homeTeam: {
+          name: "Los Angeles Lakers",
+          city: "Los Angeles",
+          record: "42-20",
+          streak: "W3",
+          color: "#552583",
+          logo: "🏀"
+        },
+        awayTeam: {
+          name: "Golden State Warriors",
+          city: "San Francisco",
+          record: "38-24",
+          streak: "L1",
+          color: "#1D428A",
+          logo: "🏀"
+        },
+        homeScore: 108,
+        awayScore: 105,
+        quarter: "4th",
+        timeRemaining: "2:14",
+        status: "live",
+        
+        arena: {
+          name: "Crypto.com Arena",
+          location: "Los Angeles, CA",
+          capacity: "19060",
+          surface: "Hardwood",
+          roofType: "Retractable",
+          indoor: true,
+          coordinates: { lat: 34.043, lng: -118.267 }
+        },
+        
+        weather: {
+          condition: "Clear",
+          temperature: 72,
+          feelsLike: 74,
+          humidity: "45%",
+          wind: "5 mph NW",
+          precipitation: "0%",
+          forecast: "Clear throughout the night",
+          hourlyTrend: [68, 70, 72, 71, 69, 67]
+        },
+        
+        gameConditions: {
+          startTime: "7:30 PM PST",
+          travel: "Warriors traveled yesterday, Lakers rested",
+          backToBack: { home: false, away: true },
+          restDays: { home: 2, away: 1 },
+          officiatingCrew: ["Scott Foster", "Tony Brothers", "Pat Fraher"],
+          attendance: "18,997",
+          broadcast: "ESPN, ABC"
+        },
+        
+        headToHead: {
+          totalMeetings: 245,
+          homeWins: 132,
+          awayWins: 113,
+          homeAvgPoints: 112.4,
+          awayAvgPoints: 110.8,
+          last5Games: [
+            { id: 1, date: "Nov 15, 2024", winner: "Lakers", score: "118-112" },
+            { id: 2, date: "Apr 8, 2024", winner: "Warriors", score: "124-120" },
+            { id: 3, date: "Mar 16, 2024", winner: "Lakers", score: "121-115" },
+            { id: 4, date: "Feb 22, 2024", winner: "Warriors", score: "128-110" },
+            { id: 5, date: "Jan 27, 2024", winner: "Lakers", score: "145-144" }
+          ],
+          trends: {
+            home: ["Won 3 of last 4", "Avg 120.5 pts at home"],
+            away: ["7-3 in last 10", "Shooting 41% from 3"]
+          }
+        },
+        
+        matchupAnalysis: {
+          advantage: "Lakers have size advantage in paint",
+          keyMatchup: "LeBron James vs. Andrew Wiggins",
+          injuryReport: {
+            home: ["Gabe Vincent (OUT - knee)"],
+            away: ["Gary Payton II (GTD - calf)"]
+          },
+          pace: "Fast (102.3 possessions/game)",
+          overUnder: "235.5 points",
+          spread: "Lakers -4.5"
+        },
+        
+        boxscore: {
+          homeStats: [
+            { id: 1, player: 'LeBron James', points: 32, rebounds: 8, assists: 9, plusMinus: '+12' },
+            { id: 2, player: 'Anthony Davis', points: 28, rebounds: 12, assists: 3, plusMinus: '+8' },
+            { id: 3, player: 'Austin Reaves', points: 18, rebounds: 4, assists: 6, plusMinus: '+5' },
+          ],
+          awayStats: [
+            { id: 4, player: 'Stephen Curry', points: 31, rebounds: 5, assists: 7, plusMinus: '+3' },
+            { id: 5, player: 'Klay Thompson', points: 22, rebounds: 3, assists: 2, plusMinus: '-2' },
+            { id: 6, player: 'Draymond Green', points: 8, rebounds: 9, assists: 11, plusMinus: '+4' },
+          ]
+        },
+        playByPlay: [
+          { id: 1, time: '12:00', description: 'Game starts', score: '0-0' },
+          { id: 2, time: '11:32', description: 'Curry 3-pointer', score: '3-0' },
+          { id: 3, time: '10:45', description: 'James dunk', score: '3-2' },
+        ],
+        teamStats: {
+          home: { fg: '45%', threePt: '38%', rebounds: 42, turnovers: 12, assists: 24, steals: 7 },
+          away: { fg: '43%', threePt: '40%', rebounds: 38, turnovers: 10, assists: 22, steals: 5 }
+        },
+        advancedStats: {
+          home: { pace: 102.3, offRating: 115.2, defRating: 111.4, netRating: 3.8 },
+          away: { pace: 101.8, offRating: 113.4, defRating: 112.1, netRating: 1.3 }
+        }
+      };
+      
+      setGame(mockGameDetails);
+      setLoading(false);
+      setLastUpdated(new Date());
+      
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }).start();
+    } catch (error) {
+      console.error('Error fetching game details:', error);
+      
+      // Log error analytics
+      await logAnalyticsEvent('game_details_load_error', {
+        error: error.message,
+        game_id: gameId,
+      });
+      
+      Alert.alert("Error", "Could not load game details");
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    
+    // Log refresh analytics
+    await logAnalyticsEvent('game_details_refresh', {
+      game_id: gameId,
+      home_team: game?.homeTeam?.name,
+      away_team: game?.awayTeam?.name,
+    });
+    
+    // Simulate refresh delay
+    setTimeout(() => {
+      setRefreshing(false);
+      setLastUpdated(new Date());
+      Alert.alert("Refreshed", "Game data has been updated");
+    }, 1500);
+  };
+
+  const handleShare = async () => {
+    if (!game) {
+      Alert.alert("Cannot Share", "Game data is not available");
+      return;
+    }
+    
+    try {
+      await logAnalyticsEvent('game_details_share', {
+        game_id: gameId,
+        home_team: game?.homeTeam?.name,
+        away_team: game?.awayTeam?.name,
+      });
+      
+      await Share.share({
+        message: `${game.awayTeam.name} vs ${game.homeTeam.name}: ${game.awayScore}-${game.homeScore}. Weather: ${game.weather.temperature}°F, ${game.weather.condition}.`,
+        title: 'Game Details'
+      });
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
+  };
+
+  const handleTabChange = async (tabKey) => {
+    await logAnalyticsEvent('game_details_tab_change', {
+      previous_tab: activeTab,
+      new_tab: tabKey,
+      game_id: gameId,
+    });
+    
+    setActiveTab(tabKey);
+  };
+
+  // SIMPLE SEARCH FUNCTION
+  const performSearch = (query) => {
+    if (!game || !query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    const results = [];
+    const searchTerm = query.toLowerCase();
+
+    // Search players
+    if (game.boxscore) {
+      const allPlayers = [...(game.boxscore.homeStats || []), ...(game.boxscore.awayStats || [])];
+      allPlayers.forEach(player => {
+        if (player.player.toLowerCase().includes(searchTerm)) {
+          results.push({
+            type: 'player',
+            data: player,
+            team: game.boxscore.homeStats.includes(player) ? game.homeTeam.name : game.awayTeam.name
+          });
+        }
+      });
+    }
+
+    // Search team stats
+    if (game.teamStats) {
+      Object.entries(game.teamStats).forEach(([team, stats]) => {
+        Object.entries(stats).forEach(([stat, value]) => {
+          if (value.toString().toLowerCase().includes(searchTerm)) {
+            results.push({
+              type: 'team_stat',
+              data: { stat, value, team }
+            });
+          }
+        });
+      });
+    }
+
+    setSearchResults(results);
+  };
+
+  // SIMPLE SEARCH MODAL COMPONENT
+  const renderSearchModal = () => (
+    <Modal
+      animationType="slide"
+      transparent={false}
+      visible={searchModalVisible}
+      onRequestClose={() => setSearchModalVisible(false)}
+    >
+      <View style={styles.searchModalContainer}>
+        <View style={styles.searchModalHeader}>
+          <TouchableOpacity 
+            onPress={() => setSearchModalVisible(false)}
+            style={styles.modalBackButton}
+          >
+            <Ionicons name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.modalTitle}>Search in Game</Text>
+        </View>
+
+        <View style={styles.searchInputContainer}>
+          <Ionicons name="search" size={20} color="#666" />
+          <TextInput
+            style={styles.modalSearchInput}
+            placeholder="Search players, stats..."
+            value={searchQuery}
+            onChangeText={(text) => {
+              setSearchQuery(text);
+              performSearch(text);
+            }}
+            autoFocus
+          />
+        </View>
+
+        <FlatList
+          data={searchResults}
+          keyExtractor={(item, index) => `search-${index}`}
+          renderItem={({ item }) => (
+            <TouchableOpacity 
+              style={styles.searchResultItem}
+              onPress={() => {
+                Alert.alert(
+                  item.type === 'player' ? item.data.player : item.data.stat,
+                  item.type === 'player' 
+                    ? `${item.team}: ${item.data.points} PTS, ${item.data.rebounds} REB`
+                    : `${item.data.team}: ${item.data.value}`,
+                  [{ text: 'OK' }]
+                );
+              }}
+            >
+              <View style={styles.searchResultIcon}>
+                <Ionicons 
+                  name={item.type === 'player' ? 'person' : 'stats-chart'} 
+                  size={20} 
+                  color="#007AFF" 
+                />
+              </View>
+              <View style={styles.searchResultContent}>
+                <Text style={styles.searchResultTitle}>
+                  {item.type === 'player' ? item.data.player : item.data.stat}
+                </Text>
+                <Text style={styles.searchResultSubtitle}>
+                  {item.type === 'player' ? item.team : `${item.data.team}: ${item.data.value}`}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={
+            <View style={styles.noResults}>
+              <Ionicons name="search-outline" size={48} color="#ccc" />
+              <Text style={styles.noResultsText}>
+                {searchQuery ? 'No results found' : 'Search for players or stats'}
+              </Text>
+            </View>
+          }
+        />
+      </View>
+    </Modal>
+  );
+
+  const renderConditionsTab = () => (
+    <View style={styles.tabContent}>
+      <Text style={styles.sectionTitle}>Game Conditions & Stadium</Text>
+      
+      {/* Weather Card */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Ionicons name="partly-sunny" size={24} color="#FF9500" />
+          <Text style={styles.cardTitle}>Weather Conditions</Text>
+          <Text style={styles.temperature}>{game?.weather?.temperature}°F</Text>
+        </View>
+        
+        <View style={styles.weatherGrid}>
+          <View style={styles.weatherItem}>
+            <Text style={styles.weatherLabel}>Feels Like</Text>
+            <Text style={styles.weatherValue}>{game?.weather?.feelsLike}°F</Text>
+          </View>
+          <View style={styles.weatherItem}>
+            <Text style={styles.weatherLabel}>Humidity</Text>
+            <Text style={styles.weatherValue}>{game?.weather?.humidity}</Text>
+          </View>
+          <View style={styles.weatherItem}>
+            <Text style={styles.weatherLabel}>Wind</Text>
+            <Text style={styles.weatherValue}>{game?.weather?.wind}</Text>
+          </View>
+          <View style={styles.weatherItem}>
+            <Text style={styles.weatherLabel}>Precipitation</Text>
+            <Text style={styles.weatherValue}>{game?.weather?.precipitation}</Text>
+          </View>
+        </View>
+        
+        <Text style={styles.forecastText}>{game?.weather?.forecast}</Text>
+        
+        {/* Temperature Trend Chart */}
+        <View style={styles.chartContainer}>
+          <Text style={styles.chartTitle}>Temperature Trend</Text>
+          <LineChart
+            data={{
+              labels: ['-3h', '-2h', '-1h', 'Game', '+1h', '+2h'],
+              datasets: [{
+                data: game?.weather?.hourlyTrend || [68, 70, 72, 71, 69, 67]
+              }]
+            }}
+            width={width - 90}
+            height={160}
+            chartConfig={{
+              backgroundColor: '#ffffff',
+              backgroundGradientFrom: '#f8f9fa',
+              backgroundGradientTo: '#ffffff',
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(255, 149, 0, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+              style: { borderRadius: 16 },
+              propsForDots: { r: "4", strokeWidth: "2", stroke: "#FF9500" }
+            }}
+            bezier
+            style={styles.chart}
+          />
+        </View>
+      </View>
+
+      {/* Stadium Card */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Ionicons name="business" size={24} color="#007AFF" />
+          <Text style={styles.cardTitle}>Stadium Info</Text>
+        </View>
+        
+        <View style={styles.stadiumInfo}>
+          <Text style={styles.stadiumName}>{game?.arena?.name}</Text>
+          <Text style={styles.stadiumLocation}>📍 {game?.arena?.location}</Text>
+          
+          <View style={styles.stadiumGrid}>
+            <View style={styles.stadiumStat}>
+              <Text style={styles.stadiumStatValue}>{game?.arena?.capacity}</Text>
+              <Text style={styles.stadiumStatLabel}>Capacity</Text>
+            </View>
+            <View style={styles.stadiumStat}>
+              <Text style={styles.stadiumStatValue}>{game?.arena?.surface}</Text>
+              <Text style={styles.stadiumStatLabel}>Surface</Text>
+            </View>
+            <View style={styles.stadiumStat}>
+              <Text style={styles.stadiumStatValue}>
+                {game?.arena?.indoor ? 'Indoor' : 'Outdoor'}
+              </Text>
+              <Text style={styles.stadiumStatLabel}>Type</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* Game Logistics */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Game Logistics</Text>
+        <View style={styles.logisticsGrid}>
+          <View style={styles.logisticItem}>
+            <Ionicons name="time" size={20} color="#666" />
+            <View>
+              <Text style={styles.logisticLabel}>Tip-off</Text>
+              <Text style={styles.logisticText}>{game?.gameConditions?.startTime}</Text>
+            </View>
+          </View>
+          <View style={styles.logisticItem}>
+            <Ionicons name="people" size={20} color="#666" />
+            <View>
+              <Text style={styles.logisticLabel}>Attendance</Text>
+              <Text style={styles.logisticText}>{game?.gameConditions?.attendance}</Text>
+            </View>
+          </View>
+          <View style={styles.logisticItem}>
+            <Ionicons name="tv" size={20} color="#666" />
+            <View>
+              <Text style={styles.logisticLabel}>Broadcast</Text>
+              <Text style={styles.logisticText}>{game?.gameConditions?.broadcast}</Text>
+            </View>
+          </View>
+          <View style={styles.logisticItem}>
+            <Ionicons name="airplane" size={20} color="#666" />
+            <View>
+              <Text style={styles.logisticLabel}>Travel</Text>
+              <Text style={styles.logisticText}>{game?.gameConditions?.travel}</Text>
+            </View>
+          </View>
+          <View style={styles.logisticItem}>
+            <Ionicons name="fitness" size={20} color="#666" />
+            <View>
+              <Text style={styles.logisticLabel}>Rest Days</Text>
+              <Text style={styles.logisticText}>
+                {game?.gameConditions?.restDays?.home} days (Home)
+              </Text>
+              <Text style={styles.logisticText}>
+                {game?.gameConditions?.restDays?.away} days (Away)
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderHeadToHeadTab = () => (
+    <View style={styles.tabContent}>
+      <Text style={styles.sectionTitle}>Historical Head-to-Head</Text>
+      
+      {/* Overall Record */}
+      <View style={styles.card}>
+        <View style={styles.h2hHeader}>
+          <View style={styles.h2hTeamColumn}>
+            <Text style={styles.h2hTeamLogo}>{game?.awayTeam?.logo}</Text>
+            <Text style={styles.h2hTeamName}>{game?.awayTeam?.name}</Text>
+            <Text style={styles.h2hTeamSub}>{game?.awayTeam?.city}</Text>
+          </View>
+          
+          <View style={styles.h2hVsColumn}>
+            <Text style={styles.h2hVs}>VS</Text>
+            <Text style={styles.h2hTotalGames}>{game?.headToHead?.totalMeetings} Meetings</Text>
+          </View>
+          
+          <View style={styles.h2hTeamColumn}>
+            <Text style={styles.h2hTeamLogo}>{game?.homeTeam?.logo}</Text>
+            <Text style={styles.h2hTeamName}>{game?.homeTeam?.name}</Text>
+            <Text style={styles.h2hTeamSub}>{game?.homeTeam?.city}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.h2hStats}>
+          <View style={styles.h2hStat}>
+            <Text style={styles.h2hStatValue}>{game?.headToHead?.awayWins}</Text>
+            <Text style={styles.h2hStatLabel}>Wins</Text>
+            <Text style={styles.h2hStatPercentage}>
+              {((game?.headToHead?.awayWins / game?.headToHead?.totalMeetings) * 100).toFixed(1)}%
+            </Text>
+          </View>
+          
+          <View style={styles.h2hStat}>
+            <Text style={styles.h2hStatValue}>{game?.headToHead?.totalMeetings}</Text>
+            <Text style={styles.h2hStatLabel}>Total Games</Text>
+            <Text style={styles.h2hStatSub}>Since 1960</Text>
+          </View>
+          
+          <View style={styles.h2hStat}>
+            <Text style={styles.h2hStatValue}>{game?.headToHead?.homeWins}</Text>
+            <Text style={styles.h2hStatLabel}>Wins</Text>
+            <Text style={styles.h2hStatPercentage}>
+              {((game?.headToHead?.homeWins / game?.headToHead?.totalMeetings) * 100).toFixed(1)}%
+            </Text>
+          </View>
+        </View>
+        
+        {/* Win Percentage Chart */}
+        <View style={styles.chartContainer}>
+          <Text style={styles.chartTitle}>All-Time Win Percentage</Text>
+          <BarChart
+            data={{
+              labels: [game?.awayTeam?.name?.substring(0, 10) || 'Away', game?.homeTeam?.name?.substring(0, 10) || 'Home'],
+              datasets: [{
+                data: [
+                  ((game?.headToHead?.awayWins / game?.headToHead?.totalMeetings) * 100) || 0,
+                  ((game?.headToHead?.homeWins / game?.headToHead?.totalMeetings) * 100) || 0
+                ]
+              }]
+            }}
+            width={width - 90}
+            height={200}
+            chartConfig={{
+              backgroundColor: '#ffffff',
+              backgroundGradientFrom: '#f8f9fa',
+              backgroundGradientTo: '#ffffff',
+              decimalPlaces: 1,
+              color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`
+            }}
+            style={styles.chart}
+            showValuesOnTopOfBars
+          />
+        </View>
+      </View>
+
+      {/* Last 5 Meetings */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Ionicons name="calendar" size={20} color="#007AFF" />
+          <Text style={styles.cardTitle}>Last 5 Meetings</Text>
+        </View>
+        {game?.headToHead?.last5Games?.map((meeting) => (
+          <TouchableOpacity 
+            key={`meeting-${meeting.id}`} 
+            style={styles.meetingItem}
+            activeOpacity={0.7}
+          >
+            <View style={styles.meetingDateContainer}>
+              <Text style={styles.meetingDate}>{meeting.date}</Text>
+              <View style={[
+                styles.winnerBadge,
+                { backgroundColor: meeting.winner === game?.homeTeam?.name ? '#E3F2FD' : '#F3E5F5' }
+              ]}>
+                <Ionicons 
+                  name="trophy" 
+                  size={12} 
+                  color={meeting.winner === game?.homeTeam?.name ? '#007AFF' : '#9C27B0'} 
+                />
+                <Text style={[
+                  styles.winnerText,
+                  { color: meeting.winner === game?.homeTeam?.name ? '#007AFF' : '#9C27B0' }
+                ]}>
+                  {meeting.winner}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.meetingScore}>{meeting.score}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Current Trends */}
+      <View style={styles.trendsContainer}>
+        <View style={styles.trendColumn}>
+          <View style={styles.trendHeader}>
+            <View style={[styles.teamColorDot, { backgroundColor: game?.awayTeam?.color || '#1D428A' }]} />
+            <Text style={styles.trendTitle}>{game?.awayTeam?.name}</Text>
+          </View>
+          {game?.headToHead?.trends?.away?.map((trend, index) => (
+            <View key={`away-trend-${index}`} style={styles.trendItem}>
+              <Ionicons name="trending-up" size={16} color="#4CAF50" />
+              <Text style={styles.trendText}>{trend}</Text>
+            </View>
+          ))}
+        </View>
+        
+        <View style={styles.divider} />
+        
+        <View style={styles.trendColumn}>
+          <View style={styles.trendHeader}>
+            <View style={[styles.teamColorDot, { backgroundColor: game?.homeTeam?.color || '#552583' }]} />
+            <Text style={styles.trendTitle}>{game?.homeTeam?.name}</Text>
+          </View>
+          {game?.headToHead?.trends?.home?.map((trend, index) => (
+            <View key={`home-trend-${index}`} style={styles.trendItem}>
+              <Ionicons name="trending-up" size={16} color="#007AFF" />
+              <Text style={styles.trendText}>{trend}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderMatchupTab = () => (
+    <View style={styles.tabContent}>
+      <Text style={styles.sectionTitle}>Matchup Analysis</Text>
+      
+      {/* Key Advantage - FIXED: Wrapped LinearGradient in a View with background */}
+      <TouchableOpacity 
+        style={[styles.card, {padding: 0, overflow: 'hidden'}]} // Add these styles
+        activeOpacity={0.9}
+        onPress={async () => {
+          await logAnalyticsEvent('game_details_view_advantage');
+        }}
+      >
+        <View style={styles.advantageCardWrapper}>
+          <LinearGradient
+            colors={['#007AFF', '#0056CC']}
+            style={styles.advantageCard}
+          >
+            <View style={styles.advantageHeader}>
+              <Ionicons name="analytics" size={24} color="#fff" />
+              <Text style={styles.advantageTitle}>Key Advantage</Text>
+            </View>
+            <Text style={styles.advantageText}>{game?.matchupAnalysis?.advantage}</Text>
+            
+            <View style={styles.matchupHighlight}>
+              <Ionicons name="person" size={20} color="#fff" />
+              <Text style={styles.matchupText}>
+                <Text style={styles.bold}>Key Matchup:</Text> {game?.matchupAnalysis?.keyMatchup}
+              </Text>
+            </View>
+          </LinearGradient>
+        </View>
+      </TouchableOpacity>
+
+      {/* Injury Report */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Ionicons name="medical" size={24} color="#FF3B30" />
+          <Text style={styles.cardTitle}>Injury Report</Text>
+        </View>
+        
+        <View style={styles.injuryContainer}>
+          <View style={styles.injurySection}>
+            <View style={styles.injuryTeamHeader}>
+              <Text style={styles.injuryTeam}>{game?.awayTeam?.name}</Text>
+              <View style={styles.injuryCountBadge}>
+                <Text style={styles.injuryCountText}>
+                  {game?.matchupAnalysis?.injuryReport?.away?.length || 0}
+                </Text>
+              </View>
+            </View>
+            {game?.matchupAnalysis?.injuryReport?.away?.map((injury, index) => (
+              <View key={`away-injury-${index}`} style={styles.injuryItem}>
+                <Ionicons name="warning" size={16} color="#FF3B30" />
+                <Text style={styles.injuryText}>{injury}</Text>
+              </View>
+            ))}
+          </View>
+          
+          <View style={styles.injuryDivider} />
+          
+          <View style={styles.injurySection}>
+            <View style={styles.injuryTeamHeader}>
+              <Text style={styles.injuryTeam}>{game?.homeTeam?.name}</Text>
+              <View style={styles.injuryCountBadge}>
+                <Text style={styles.injuryCountText}>
+                  {game?.matchupAnalysis?.injuryReport?.home?.length || 0}
+                </Text>
+              </View>
+            </View>
+            {game?.matchupAnalysis?.injuryReport?.home?.map((injury, index) => (
+              <View key={`home-injury-${index}`} style={styles.injuryItem}>
+                <Ionicons name="warning" size={16} color="#FF3B30" />
+                <Text style={styles.injuryText}>{injury}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+
+      {/* Game Metrics */}
+      <View style={styles.metricsGrid}>
+        <TouchableOpacity 
+          style={styles.metricCard}
+          activeOpacity={0.8}
+          onPress={async () => {
+            await logAnalyticsEvent('game_details_view_pace_stats');
+          }}
+        >
+          <LinearGradient
+            colors={['#f0f9ff', '#e0f2fe']}
+            style={styles.metricGradient}
+          >
+            <Ionicons name="speedometer" size={28} color="#0ea5e9" />
+            <Text style={styles.metricValue}>{game?.matchupAnalysis?.pace}</Text>
+            <Text style={styles.metricLabel}>Game Pace</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.metricCard}
+          activeOpacity={0.8}
+          onPress={async () => {
+            await logAnalyticsEvent('game_details_view_spread');
+          }}
+        >
+          <LinearGradient
+            colors={['#fef3c7', '#fde68a']}
+            style={styles.metricGradient}
+          >
+            <Ionicons name="trending-up" size={28} color="#f59e0b" />
+            <Text style={styles.metricValue}>{game?.matchupAnalysis?.spread}</Text>
+            <Text style={styles.metricLabel}>Spread</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={styles.metricCard}
+          activeOpacity={0.8}
+          onPress={async () => {
+            await logAnalyticsEvent('game_details_view_over_under');
+          }}
+        >
+          <LinearGradient
+            colors={['#d1fae5', '#a7f3d0']}
+            style={styles.metricGradient}
+          >
+            <Ionicons name="stats-chart" size={28} color="#10b981" />
+            <Text style={styles.metricValue}>{game?.matchupAnalysis?.overUnder}</Text>
+            <Text style={styles.metricLabel}>Over/Under</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+
+      {/* Advanced Stats Toggle */}
+      <TouchableOpacity 
+        style={styles.advancedToggle}
+        onPress={() => setShowAdvancedStats(!showAdvancedStats)}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.advancedToggleText}>
+          {showAdvancedStats ? 'Hide' : 'Show'} Advanced Stats
+        </Text>
+        <Ionicons 
+          name={showAdvancedStats ? "chevron-up" : "chevron-down"} 
+          size={20} 
+          color="#007AFF" 
+        />
+      </TouchableOpacity>
+
+      {showAdvancedStats && (
+        <View style={styles.advancedStatsCard}>
+          <Text style={styles.advancedStatsTitle}>Advanced Statistics</Text>
+          <View style={styles.advancedStatsGrid}>
+            <View style={styles.advancedStatRow}>
+              <Text style={styles.advancedStatLabel}>Pace</Text>
+              <Text style={styles.advancedStatValue}>{game?.advancedStats?.away?.pace}</Text>
+              <Text style={styles.advancedStatValue}>{game?.advancedStats?.home?.pace}</Text>
+            </View>
+            <View style={styles.advancedStatRow}>
+              <Text style={styles.advancedStatLabel}>Off Rating</Text>
+              <Text style={styles.advancedStatValue}>{game?.advancedStats?.away?.offRating}</Text>
+              <Text style={styles.advancedStatValue}>{game?.advancedStats?.home?.offRating}</Text>
+            </View>
+            <View style={styles.advancedStatRow}>
+              <Text style={styles.advancedStatLabel}>Def Rating</Text>
+              <Text style={styles.advancedStatValue}>{game?.advancedStats?.away?.defRating}</Text>
+              <Text style={styles.advancedStatValue}>{game?.advancedStats?.home?.defRating}</Text>
+            </View>
+            <View style={styles.advancedStatRow}>
+              <Text style={styles.advancedStatLabel}>Net Rating</Text>
+              <Text style={styles.advancedStatValue}>{game?.advancedStats?.away?.netRating}</Text>
+              <Text style={styles.advancedStatValue}>{game?.advancedStats?.home?.netRating}</Text>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderBoxscore = () => (
+    <View style={styles.tabContent}>
+      <Text style={styles.sectionTitle}>Box Score</Text>
+      
+      {/* Away Team */}
+      <View style={styles.teamSection}>
+        <View style={styles.teamSectionHeader}>
+          <Text style={styles.teamName}>{game?.awayTeam?.name}</Text>
+          <Text style={styles.teamScore}>{game?.awayScore}</Text>
+        </View>
+        <View style={styles.statsHeader}>
+          <Text style={styles.statsHeaderCell}>Player</Text>
+          <Text style={styles.statsHeaderCell}>PTS</Text>
+          <Text style={styles.statsHeaderCell}>REB</Text>
+          <Text style={styles.statsHeaderCell}>AST</Text>
+          <Text style={styles.statsHeaderCell}>+/-</Text>
+        </View>
+        {game?.boxscore?.awayStats?.map((player) => (
+          <TouchableOpacity 
+            key={`away-player-${player.id}`} 
+            style={styles.playerRow}
+            activeOpacity={0.7}
+            onPress={async () => {
+              await logAnalyticsEvent('game_details_view_player_stats', {
+                player_name: player.player,
+                team: game?.awayTeam?.name,
+              });
+            }}
+          >
+            <Text style={styles.playerName}>{player.player}</Text>
+            <Text style={styles.playerStat}>{player.points}</Text>
+            <Text style={styles.playerStat}>{player.rebounds}</Text>
+            <Text style={styles.playerStat}>{player.assists}</Text>
+            <Text style={[
+              styles.playerPlusMinus,
+              { color: player.plusMinus.startsWith('+') ? '#10b981' : '#ef4444' }
+            ]}>
+              {player.plusMinus}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Home Team */}
+      <View style={styles.teamSection}>
+        <View style={styles.teamSectionHeader}>
+          <Text style={styles.teamName}>{game?.homeTeam?.name}</Text>
+          <Text style={styles.teamScore}>{game?.homeScore}</Text>
+        </View>
+        <View style={styles.statsHeader}>
+          <Text style={styles.statsHeaderCell}>Player</Text>
+          <Text style={styles.statsHeaderCell}>PTS</Text>
+          <Text style={styles.statsHeaderCell}>REB</Text>
+          <Text style={styles.statsHeaderCell}>AST</Text>
+          <Text style={styles.statsHeaderCell}>+/-</Text>
+        </View>
+        {game?.boxscore?.homeStats?.map((player) => (
+          <TouchableOpacity 
+            key={`home-player-${player.id}`} 
+            style={styles.playerRow}
+            activeOpacity={0.7}
+            onPress={async () => {
+              await logAnalyticsEvent('game_details_view_player_stats', {
+                player_name: player.player,
+                team: game?.homeTeam?.name,
+              });
+            }}
+          >
+            <Text style={styles.playerName}>{player.player}</Text>
+            <Text style={styles.playerStat}>{player.points}</Text>
+            <Text style={styles.playerStat}>{player.rebounds}</Text>
+            <Text style={styles.playerStat}>{player.assists}</Text>
+            <Text style={[
+              styles.playerPlusMinus,
+              { color: player.plusMinus.startsWith('+') ? '#10b981' : '#ef4444' }
+            ]}>
+              {player.plusMinus}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderTeamStats = () => (
+    <View style={styles.tabContent}>
+      <Text style={styles.sectionTitle}>Team Statistics</Text>
+      
+      <View style={styles.statsGrid}>
+        <View style={styles.statHeaderRow}>
+          <Text style={styles.statHeaderLabel}>Stat</Text>
+          <Text style={styles.statHeaderTeam}>{game?.awayTeam?.name}</Text>
+          <Text style={styles.statHeaderTeam}>{game?.homeTeam?.name}</Text>
+        </View>
+        <View style={styles.statRow}>
+          <Text style={styles.statLabel}>Field Goal %</Text>
+          <Text style={styles.statValue}>{game?.teamStats?.away?.fg}</Text>
+          <Text style={styles.statValue}>{game?.teamStats?.home?.fg}</Text>
+        </View>
+        <View style={styles.statRow}>
+          <Text style={styles.statLabel}>3-Point %</Text>
+          <Text style={styles.statValue}>{game?.teamStats?.away?.threePt}</Text>
+          <Text style={styles.statValue}>{game?.teamStats?.home?.threePt}</Text>
+        </View>
+        <View style={styles.statRow}>
+          <Text style={styles.statLabel}>Rebounds</Text>
+          <Text style={styles.statValue}>{game?.teamStats?.away?.rebounds}</Text>
+          <Text style={styles.statValue}>{game?.teamStats?.home?.rebounds}</Text>
+        </View>
+        <View style={styles.statRow}>
+          <Text style={styles.statLabel}>Turnovers</Text>
+          <Text style={styles.statValue}>{game?.teamStats?.away?.turnovers}</Text>
+          <Text style={styles.statValue}>{game?.teamStats?.home?.turnovers}</Text>
+        </View>
+        <View style={styles.statRow}>
+          <Text style={styles.statLabel}>Assists</Text>
+          <Text style={styles.statValue}>{game?.teamStats?.away?.assists}</Text>
+          <Text style={styles.statValue}>{game?.teamStats?.home?.assists}</Text>
+        </View>
+        <View style={styles.statRow}>
+          <Text style={styles.statLabel}>Steals</Text>
+          <Text style={styles.statValue}>{game?.teamStats?.away?.steals}</Text>
+          <Text style={styles.statValue}>{game?.teamStats?.home?.steals}</Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderPlayByPlay = () => (
+    <View style={styles.tabContent}>
+      <Text style={styles.sectionTitle}>Play by Play</Text>
+      
+      {game?.playByPlay?.map((play) => (
+        <View key={`play-${play.id}`} style={styles.playItem}>
+          <View style={styles.playTimeContainer}>
+            <Text style={styles.playTime}>{play.time}</Text>
+          </View>
+          <View style={styles.playDescriptionContainer}>
+            <Text style={styles.playDescription}>{play.description}</Text>
+          </View>
+          <View style={styles.playScoreContainer}>
+            <Text style={styles.playScore}>{play.score}</Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Loading game details...</Text>
+      </View>
+    );
+  }
+
+  if (!game) {
+    return (
+      <View style={styles.centerContainer}>
+        <Ionicons name="alert-circle" size={50} color="#FF3B30" />
+        <Text style={styles.errorText}>Game not found</Text>
+        <TouchableOpacity 
+          style={styles.backButtonLarge}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Enhanced tabs array with new sections
+  const tabs = [
+    { key: 'conditions', label: 'Conditions', icon: 'partly-sunny' },
+    { key: 'headtohead', label: 'H2H Stats', icon: 'stats-chart' },
+    { key: 'matchup', label: 'Matchup', icon: 'analytics' },
+    { key: 'boxscore', label: 'Box Score', icon: 'list' },
+    { key: 'teamstats', label: 'Team Stats', icon: 'people' },
+    { key: 'playbyplay', label: 'Plays', icon: 'play' }
+  ];
+
+  return (
+    <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+      <ScrollView 
+        style={styles.container} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#007AFF']}
+            tintColor="#007AFF"
+          />
+        }
+      >
+        {/* Enhanced Game Header */}
+        <LinearGradient
+          colors={['#007AFF', '#0056CC']}
+          style={styles.gameHeader}
+        >
+          <View style={styles.headerTop}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
+              <Ionicons name="arrow-back" size={24} color="white" />
+            </TouchableOpacity>
+            
+            {/* ADD THIS SEARCH BUTTON */}
+            <TouchableOpacity 
+              style={styles.headerSearchButton}
+              onPress={() => setSearchModalVisible(true)}
+            >
+              <Ionicons name="search-outline" size={20} color="white" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.shareButton}
+              onPress={handleShare}
+            >
+              <Ionicons name="share-outline" size={20} color="white" />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.scoreContainer}>
+            <View style={styles.teamContainer}>
+              <Text style={styles.teamLogo}>{game?.awayTeam?.logo}</Text>
+              <Text style={styles.teamNameLarge}>{game?.awayTeam?.name}</Text>
+              <Text style={styles.teamRecord}>{game?.awayTeam?.record} • {game?.awayTeam?.streak}</Text>
+              <Text style={styles.scoreLarge}>{game?.awayScore}</Text>
+            </View>
+            
+            <View style={styles.vsContainer}>
+              <Text style={styles.vsText}>VS</Text>
+              <View style={styles.statusBadge}>
+                <Ionicons name="radio" size={12} color="#4CAF50" />
+                <Text style={styles.gameStatus}>{game?.status?.toUpperCase() || 'LIVE'}</Text>
+              </View>
+              <Text style={styles.gameTime}>{game?.quarter} • {game?.timeRemaining}</Text>
+            </View>
+            
+            <View style={styles.teamContainer}>
+              <Text style={styles.teamLogo}>{game?.homeTeam?.logo}</Text>
+              <Text style={styles.teamNameLarge}>{game?.homeTeam?.name}</Text>
+              <Text style={styles.teamRecord}>{game?.homeTeam?.record} • {game?.homeTeam?.streak}</Text>
+              <Text style={styles.scoreLarge}>{game?.homeScore}</Text>
+            </View>
+          </View>
+          
+          <View style={styles.gameInfo}>
+            <Text style={styles.arena}>
+              🌡️ {game?.weather?.temperature}°F {game?.weather?.condition} • 
+              🏟️ {game?.arena?.name}
+            </Text>
+            <View style={styles.lastUpdatedRow}>
+              <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.8)" />
+              <Text style={styles.lastUpdatedText}>
+                Updated: {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+            </View>
+          </View>
+        </LinearGradient>
+
+        {/* Enhanced Tabs */}
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabsScrollContainer}
+        >
+          <View style={styles.tabsContainer}>
+            {tabs.map((tab) => (
+              <TouchableOpacity
+                key={tab.key}
+                style={[
+                  styles.tabButton,
+                  activeTab === tab.key && styles.tabButtonActive
+                ]}
+                onPress={() => handleTabChange(tab.key)}
+              >
+                <Ionicons 
+                  name={tab.icon} 
+                  size={16} 
+                  color={activeTab === tab.key ? "white" : "#666"} 
+                  style={styles.tabIcon}
+                />
+                <Text style={[
+                  styles.tabButtonText,
+                  activeTab === tab.key && styles.tabButtonTextActive
+                ]}>
+                  {tab.label}
+                </Text>
+                {activeTab === tab.key && <View style={styles.tabIndicator} />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+
+        {/* Tab Content Router */}
+        {activeTab === 'conditions' && renderConditionsTab()}
+        {activeTab === 'headtohead' && renderHeadToHeadTab()}
+        {activeTab === 'matchup' && renderMatchupTab()}
+        {activeTab === 'boxscore' && renderBoxscore()}
+        {activeTab === 'teamstats' && renderTeamStats()}
+        {activeTab === 'playbyplay' && renderPlayByPlay()}
+        
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            Data provided by Sports Analytics API • Updated live
+          </Text>
+          <TouchableOpacity 
+            style={styles.footerButton}
+            onPress={async () => {
+              await logAnalyticsEvent('game_details_view_analytics');
+              navigation.navigate('Analytics');
+            }}
+          >
+            <Text style={styles.footerButtonText}>View Advanced Analytics →</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+      
+      {/* RENDER THE SEARCH MODAL */}
+      {renderSearchModal()}
+    </Animated.View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  gameHeader: {
+    paddingTop: 50,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    backgroundColor: '#007AFF', // Explicit background for shadow calculation
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+    marginBottom: 10,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerSearchButton: {
+    position: 'absolute',
+    right: 60,
+    top: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  shareButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scoreContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    marginVertical: 15,
+  },
+  teamContainer: {
+    alignItems: 'center',
+    flex: 1,
+    paddingHorizontal: 10,
+  },
+  teamLogo: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  teamNameLarge: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  teamRecord: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+    marginBottom: 8,
+  },
+  scoreLarge: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  vsContainer: {
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  vsText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.8)',
+    marginBottom: 6,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginBottom: 4,
+  },
+  gameStatus: {
+    fontSize: 10,
+    color: '#4CAF50',
+    fontWeight: 'bold',
+    marginLeft: 3,
+  },
+  gameTime: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.7)',
+  },
+  gameInfo: {
+    alignItems: 'center',
+    marginTop: 10,
+    paddingHorizontal: 20,
+  },
+  arena: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.9)',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  lastUpdatedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  lastUpdatedText: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.7)',
+    marginLeft: 6,
+  },
+  tabsScrollContainer: {
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: '#ffffff',
+  },
+  tabButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 8,
+    borderRadius: 16,
+    backgroundColor: '#f8fafc',
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  tabButtonActive: {
+    backgroundColor: '#007AFF',
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  tabIcon: {
+    marginRight: 6,
+  },
+  tabButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+  },
+  tabButtonTextActive: {
+    color: 'white',
+  },
+  tabIndicator: {
+    position: 'absolute',
+    bottom: -2,
+    left: '25%',
+    right: '25%',
+    height: 3,
+    backgroundColor: 'white',
+    borderRadius: 2,
+  },
+  tabContent: {
+    padding: 15,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 15,
+    backgroundColor: '#f8fafc',
+  },
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginLeft: 10,
+    flex: 1,
+  },
+  temperature: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FF9500',
+  },
+  weatherGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+  },
+  weatherItem: {
+    width: '48%',
+    padding: 12,
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    marginBottom: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  weatherLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  weatherValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  forecastText: {
+    fontSize: 13,
+    color: '#6b7280',
+    fontStyle: 'italic',
+    marginBottom: 15,
+    paddingHorizontal: 5,
+  },
+  chartContainer: {
+    marginTop: 10,
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  chartTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 10,
+    alignSelf: 'flex-start',
+  },
+  chart: {
+    borderRadius: 12,
+    marginVertical: 8,
+  },
+  stadiumInfo: {
+    marginTop: 5,
+  },
+  stadiumName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  stadiumLocation: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 15,
+  },
+  stadiumGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  stadiumStat: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  stadiumStatValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#007AFF',
+    marginBottom: 4,
+  },
+  stadiumStatLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  logisticsGrid: {
+    marginTop: 10,
+  },
+  logisticItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  logisticLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+  logisticText: {
+    fontSize: 13,
+    color: '#1f2937',
+    marginLeft: 10,
+    flex: 1,
+    lineHeight: 18,
+  },
+  h2hHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  h2hTeamColumn: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  h2hTeamLogo: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  h2hTeamName: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  h2hTeamSub: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  h2hVsColumn: {
+    alignItems: 'center',
+    marginHorizontal: 10,
+  },
+  h2hVs: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginBottom: 4,
+  },
+  h2hTotalGames: {
+    fontSize: 11,
+    color: '#9ca3af',
+    fontStyle: 'italic',
+  },
+  h2hStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  h2hStat: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  h2hStatValue: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#007AFF',
+    marginBottom: 4,
+  },
+  h2hStatLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+  h2hStatPercentage: {
+    fontSize: 11,
+    color: '#10b981',
+    fontWeight: '600',
+  },
+  h2hStatSub: {
+    fontSize: 11,
+    color: '#9ca3af',
+    fontStyle: 'italic',
+  },
+  meetingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  meetingDateContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  meetingDate: {
+    fontSize: 13,
+    color: '#6b7280',
+    width: 100,
+  },
+  meetingScore: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    flex: 1,
+    textAlign: 'center',
+  },
+  winnerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  winnerText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  trendsContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  trendColumn: {
+    flex: 1,
+  },
+  trendHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  teamColorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  trendTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  trendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  trendText: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginLeft: 8,
+    flex: 1,
+  },
+  divider: {
+    width: 1,
+    backgroundColor: '#f1f5f9',
+    marginHorizontal: 15,
+  },
+  advantageCardWrapper: {
+    backgroundColor: '#007AFF',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  advantageCard: {
+    padding: 20,
+    borderRadius: 12,
+    backgroundColor: '#007AFF', // Add background color for shadow calculation
+  },
+  advantageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  advantageTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: 'white',
+    marginLeft: 10,
+  },
+  advantageText: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.9)',
+    lineHeight: 22,
+    marginBottom: 15,
+  },
+  matchupHighlight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    padding: 12,
+    borderRadius: 8,
+  },
+  matchupText: {
+    fontSize: 13,
+    color: 'white',
+    marginLeft: 10,
+    flex: 1,
+  },
+  bold: {
+    fontWeight: 'bold',
+  },
+  injuryContainer: {
+    flexDirection: 'row',
+  },
+  injurySection: {
+    flex: 1,
+  },
+  injuryTeamHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  injuryTeam: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  injuryCountBadge: {
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  injuryCountText: {
+    fontSize: 11,
+    color: '#dc2626',
+    fontWeight: '600',
+  },
+  injuryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  injuryText: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginLeft: 8,
+  },
+  injuryDivider: {
+    width: 1,
+    backgroundColor: '#f1f5f9',
+    marginHorizontal: 15,
+  },
+  metricsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  metricCard: {
+    width: '32%',
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    backgroundColor: '#ffffff',
+  },
+  metricGradient: {
+    padding: 15,
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+  },
+  metricValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginVertical: 8,
+    textAlign: 'center',
+  },
+  metricLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  advancedToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  advancedToggleText: {
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  advancedStatsCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  advancedStatsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 12,
+  },
+  advancedStatsGrid: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    padding: 12,
+  },
+  advancedStatRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  advancedStatLabel: {
+    flex: 2,
+    fontSize: 13,
+    color: '#6b7280',
+  },
+  advancedStatValue: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1f2937',
+    textAlign: 'center',
+  },
+  teamSection: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  teamSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  teamName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  teamScore: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#007AFF',
+  },
+  statsHeader: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    paddingBottom: 8,
+    marginBottom: 8,
+  },
+  statsHeaderCell: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  playerRow: {
+    flexDirection: 'row',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f8fafc',
+  },
+  playerName: {
+    flex: 2,
+    fontSize: 14,
+    color: '#1f2937',
+  },
+  playerStat: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1f2937',
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  playerPlusMinus: {
+    flex: 1,
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  statsGrid: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  statHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: '#e5e7eb',
+    marginBottom: 8,
+  },
+  statHeaderLabel: {
+    flex: 2,
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  statHeaderTeam: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  statRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  statLabel: {
+    flex: 2,
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  statValue: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+    textAlign: 'center',
+  },
+  playItem: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  playTimeContainer: {
+    width: 50,
+  },
+  playTime: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  playDescriptionContainer: {
+    flex: 1,
+    marginHorizontal: 10,
+  },
+  playDescription: {
+    fontSize: 14,
+    color: '#1f2937',
+  },
+  playScoreContainer: {
+    width: 50,
+  },
+  playScore: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    textAlign: 'right',
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#f8fafc',
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#666',
+  },
+  errorText: {
+    fontSize: 18,
+    color: '#FF3B30',
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  backButtonLarge: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  backButtonText: {
+    fontSize: 16,
+    color: 'white',
+    fontWeight: '600',
+  },
+  footer: {
+    padding: 20,
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginBottom: 10,
+  },
+  footerButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  footerButtonText: {
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  // Search Modal Styles
+  searchModalContainer: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  searchModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 50,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  modalBackButton: {
+    marginRight: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    margin: 16,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  modalSearchInput: {
+    flex: 1,
+    height: 44,
+    fontSize: 16,
+    color: '#333',
+    paddingHorizontal: 12,
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+  },
+  searchResultIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F0F8FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  searchResultContent: {
+    flex: 1,
+  },
+  searchResultTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  searchResultSubtitle: {
+    fontSize: 14,
+    color: '#666',
+  },
+  noResults: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  noResultsText: {
+    fontSize: 16,
+    color: '#999',
+    marginTop: 16,
+  },
+});

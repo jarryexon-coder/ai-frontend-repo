@@ -1,0 +1,981 @@
+// src/screens/LiveGamesScreen-enhanced.js - FIXED VERSION
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  RefreshControl,
+  TouchableOpacity,
+  Animated,
+  Dimensions,
+} from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { useSportsData } from "../hooks/useSportsData";
+
+const { width } = Dimensions.get('window');
+
+// Helper functions for safe data extraction
+const getTeamName = (team) => {
+  if (!team) return 'TBD';
+  if (typeof team === 'string') return team;
+  if (typeof team === 'object' && team.name) return String(team.name);
+  return 'TBD';
+};
+
+const getTeamScore = (team) => {
+  if (!team) return '0';
+  if (typeof team === 'object' && team.score !== undefined) return String(team.score);
+  if (typeof team === 'number') return String(team);
+  return '0';
+};
+
+// Helper function for safe array slicing
+const safeSlice = (array, start, end) => {
+  if (!Array.isArray(array)) return [];
+  return array.slice(start, end);
+};
+
+const LiveGamesScreen = () => {
+  const [selectedSport, setSelectedSport] = useState('NBA');
+  const [refreshing, setRefreshing] = useState(false);
+  const [pulseAnim] = useState(new Animated.Value(1));
+  
+  const sports = ['NBA', 'NFL', 'NHL', 'MLB'];
+
+  // Use sports data hook
+  const { 
+    data: { nba, nfl, nhl, mlb, news },
+    isLoading,
+    refreshAllData
+  } = useSportsData({
+    autoRefresh: true,
+    refreshInterval: 30000
+  });
+
+  // Get games based on selected sport
+  const getGamesForSport = () => {
+    switch(selectedSport) {
+      case 'NBA':
+        return nba?.liveGames || nba?.games || [];
+      case 'NFL':
+        return nfl?.liveGames || nfl?.games || [];
+      case 'NHL':
+        return nhl?.liveGames || nhl?.games || [];
+      case 'MLB':
+        return mlb?.liveGames || mlb?.games || [];
+      default:
+        return [];
+    }
+  };
+
+  const games = getGamesForSport();
+
+  // Mock data structure for fallback (when API doesn't return proper structure)
+  const mockGamesData = {
+    NBA: [
+      {
+        id: 1,
+        awayTeam: 'Golden State Warriors',
+        homeTeam: 'Los Angeles Lakers',
+        awayScore: 105,
+        homeScore: 108,
+        period: '4th',
+        timeRemaining: '2:15',
+        status: 'Live',
+        quarter: '4th',
+        channel: 'TNT',
+        lastPlay: 'LeBron James makes 3-pointer',
+        awayColor: '#1d428a',
+        homeColor: '#552583',
+        awayRecord: '42-38',
+        homeRecord: '43-37',
+        arena: 'Crypto.com Arena',
+        attendance: '18,997',
+        keyPlayers: [
+          { name: 'Stephen Curry', points: 32, rebounds: 5, assists: 8 },
+          { name: 'LeBron James', points: 28, rebounds: 10, assists: 11 },
+        ]
+      },
+      {
+        id: 2,
+        awayTeam: 'Boston Celtics',
+        homeTeam: 'Miami Heat',
+        awayScore: 112,
+        homeScore: 98,
+        period: 'Final',
+        timeRemaining: '0:00',
+        status: 'Final',
+        quarter: '4th',
+        channel: 'ESPN',
+        lastPlay: 'Game ended',
+        awayColor: '#007a33',
+        homeColor: '#98002e',
+        awayRecord: '57-25',
+        homeRecord: '44-38',
+        arena: 'FTX Arena',
+        attendance: '19,600',
+        keyPlayers: [
+          { name: 'Jayson Tatum', points: 35, rebounds: 8, assists: 4 },
+          { name: 'Jimmy Butler', points: 27, rebounds: 6, assists: 6 },
+        ]
+      },
+    ],
+    NFL: [
+      {
+        id: 1,
+        awayTeam: 'Kansas City Chiefs',
+        homeTeam: 'Buffalo Bills',
+        awayScore: 24,
+        homeScore: 27,
+        period: '4th',
+        timeRemaining: '5:42',
+        status: 'Live',
+        quarter: '4th',
+        channel: 'CBS',
+        lastPlay: 'Josh Allen 12-yard TD pass',
+        awayColor: '#e31837',
+        homeColor: '#00338d',
+        awayRecord: '14-3',
+        homeRecord: '13-4',
+        stadium: 'Highmark Stadium',
+        attendance: '71,608',
+        keyPlayers: [
+          { name: 'Patrick Mahomes', yards: 312, tds: 2, ints: 1 },
+          { name: 'Josh Allen', yards: 289, tds: 3, ints: 0 },
+        ]
+      }
+    ],
+    NHL: [
+      {
+        id: 1,
+        awayTeam: 'Toronto Maple Leafs',
+        homeTeam: 'Montreal Canadiens',
+        awayScore: 4,
+        homeScore: 2,
+        period: '3rd',
+        timeRemaining: '8:15',
+        status: 'Live',
+        period: '3rd',
+        channel: 'ESPN+',
+        lastPlay: 'Auston Matthews goal (Power Play)',
+        awayColor: '#003e7e',
+        homeColor: '#af1e2d',
+        awayRecord: '46-26-10',
+        homeRecord: '28-32-12',
+        arena: 'Bell Centre',
+        attendance: '21,105',
+        keyPlayers: [
+          { name: 'Auston Matthews', goals: 2, assists: 1, shots: 6 },
+          { name: 'Nick Suzuki', goals: 1, assists: 0, shots: 3 },
+        ]
+      }
+    ]
+  };
+
+  useEffect(() => {
+    // Start pulse animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.2,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    refreshAllData().finally(() => {
+      setRefreshing(false);
+    });
+  };
+
+  const renderHeader = () => (
+    <View style={styles.headerShadow}>
+      <LinearGradient
+        colors={['#dc2626', '#ef4444']}
+        style={styles.header}
+      >
+        <View style={styles.headerContent}>
+          <View style={styles.liveIndicatorContainer}>
+            <Animated.View style={[styles.liveIndicator, { transform: [{ scale: pulseAnim }] }]} />
+            <Text style={styles.liveText}>LIVE NOW</Text>
+          </View>
+          <Text style={styles.title}>Real-Time Games</Text>
+          <Text style={styles.subtitle}>Live scores, stats & play-by-play</Text>
+        </View>
+        
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.sportsScroll}
+        >
+          {sports.map((sport, index) => (
+            <TouchableOpacity
+              key={`sport-tab-${sport}-${index}`}
+              style={[
+                styles.sportTab,
+                selectedSport === sport && styles.activeSportTab
+              ]}
+              onPress={() => setSelectedSport(sport)}
+            >
+              <Text style={[
+                styles.sportTabText,
+                selectedSport === sport && styles.activeSportTabText
+              ]}>
+                {sport}
+              </Text>
+              {sport === 'NBA' && <View style={styles.notificationDot} />}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </LinearGradient>
+    </View>
+  );
+
+  const renderGameCard = (game, index) => (
+    <View key={`game-${game.id}-${index}`} style={styles.gameCard}>
+      <View style={styles.gameHeader}>
+        <View style={styles.teamColumn}>
+          <View style={[styles.teamLogo, { backgroundColor: game.awayColor || '#1d428a' }]} />
+          <Text style={styles.teamName} numberOfLines={1}>
+            {getTeamName(game.awayTeam)}
+          </Text>
+          <Text style={styles.teamRecord}>{game.awayRecord || '0-0'}</Text>
+        </View>
+        
+        <View style={styles.scoreColumn}>
+          <View style={styles.scoreContainer}>
+            <Text style={styles.score}>
+              {getTeamScore(game.awayScore)}
+            </Text>
+            <View style={styles.vsContainer}>
+              <Text style={styles.vsText}>-</Text>
+              {game.status === 'Live' && (
+                <View style={styles.liveBadge}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveBadgeText}>LIVE</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.score}>
+              {getTeamScore(game.homeScore)}
+            </Text>
+          </View>
+          
+          <View style={styles.timeContainer}>
+            <Text style={styles.period}>{game.period || game.quarter || 'Q1'}</Text>
+            <Text style={styles.timeRemaining}>{game.timeRemaining || '12:00'}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.teamColumn}>
+          <View style={[styles.teamLogo, { backgroundColor: game.homeColor || '#552583' }]} />
+          <Text style={styles.teamName} numberOfLines={1}>
+            {getTeamName(game.homeTeam)}
+          </Text>
+          <Text style={styles.teamRecord}>{game.homeRecord || '0-0'}</Text>
+        </View>
+      </View>
+      
+      <View style={styles.gameDetails}>
+        <View style={styles.detailRow}>
+          <Ionicons name="location" size={12} color="#6b7280" />
+          <Text style={styles.detailText}>{game.arena || game.stadium || 'Arena'}</Text>
+          <Ionicons name="people" size={12} color="#6b7280" style={styles.detailIcon} />
+          <Text style={styles.detailText}>{game.attendance || 'N/A'}</Text>
+          <Ionicons name="tv" size={12} color="#6b7280" style={styles.detailIcon} />
+          <Text style={styles.detailText}>{game.channel || 'TBD'}</Text>
+        </View>
+        
+        <View style={styles.lastPlay}>
+          <Ionicons name="play-circle" size={14} color="#3b82f6" />
+          <Text style={styles.lastPlayText} numberOfLines={1}>
+            {game.lastPlay || 'Game in progress'}
+          </Text>
+        </View>
+      </View>
+      
+      <View style={styles.keyPlayers}>
+        <Text style={styles.keyPlayersTitle}>Key Performers</Text>
+        <View style={styles.playersRow}>
+          {game.keyPlayers && game.keyPlayers.map((player, playerIndex) => (
+            <View key={`player-${playerIndex}-${player.name}`} style={styles.playerStats}>
+              <Text style={styles.playerName}>{player.name}</Text>
+              <View style={styles.statsRow}>
+                {player.points !== undefined && (
+                  <View style={styles.stat}>
+                    <Text style={styles.statValue}>{player.points}</Text>
+                    <Text style={styles.statLabel}>PTS</Text>
+                  </View>
+                )}
+                {player.rebounds !== undefined && (
+                  <View style={styles.stat}>
+                    <Text style={styles.statValue}>{player.rebounds}</Text>
+                    <Text style={styles.statLabel}>REB</Text>
+                  </View>
+                )}
+                {player.assists !== undefined && (
+                  <View style={styles.stat}>
+                    <Text style={styles.statValue}>{player.assists}</Text>
+                    <Text style={styles.statLabel}>AST</Text>
+                  </View>
+                )}
+                {player.goals !== undefined && (
+                  <View style={styles.stat}>
+                    <Text style={styles.statValue}>{player.goals}</Text>
+                    <Text style={styles.statLabel}>G</Text>
+                  </View>
+                )}
+                {player.yards !== undefined && (
+                  <View style={styles.stat}>
+                    <Text style={styles.statValue}>{player.yards}</Text>
+                    <Text style={styles.statLabel}>YDS</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          ))}
+        </View>
+      </View>
+      
+      <View style={styles.gameActions}>
+        <TouchableOpacity style={styles.actionButton}>
+          <Ionicons name="stats-chart" size={16} color="#3b82f6" />
+          <Text style={styles.actionText}>Full Stats</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionButton}>
+          <Ionicons name="play" size={16} color="#ef4444" />
+          <Text style={styles.actionText}>Watch Live</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionButton}>
+          <Ionicons name="chatbubble" size={16} color="#10b981" />
+          <Text style={styles.actionText}>Game Chat</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderLiveStats = () => (
+    <View style={styles.statsContainer}>
+      <Text style={styles.statsTitle}>Live Stats</Text>
+      <View style={styles.statsGrid}>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>{games.filter(g => g.status === 'Live').length}</Text>
+          <Text style={styles.statLabel}>Games Live</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>
+            {games.reduce((sum, game) => sum + (parseInt(getTeamScore(game.awayScore)) || 0) + (parseInt(getTeamScore(game.homeScore)) || 0), 0)}
+          </Text>
+          <Text style={styles.statLabel}>Total Points</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>{games.length}</Text>
+          <Text style={styles.statLabel}>Total Games</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>3</Text>
+          <Text style={styles.statLabel}>Overtimes</Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderLiveUpdates = () => (
+    <View style={styles.updatesContainer}>
+      <View style={styles.updatesHeader}>
+        <Text style={styles.updatesTitle}>Live Updates</Text>
+        <TouchableOpacity onPress={onRefresh}>
+          <Text style={styles.seeAll}>Refresh</Text>
+        </TouchableOpacity>
+      </View>
+      
+      <View style={styles.updateCard}>
+        <View style={styles.updateHeader}>
+          <View style={styles.updateSportBadge}>
+            <Text style={styles.updateSportText}>{selectedSport}</Text>
+          </View>
+          <Text style={styles.updateTime}>Just now</Text>
+        </View>
+        <Text style={styles.updateText}>
+          ⚡ Stephen Curry hits a deep three-pointer! Warriors cut the lead to 2.
+        </Text>
+      </View>
+      
+      <View style={styles.updateCard}>
+        <View style={styles.updateHeader}>
+          <View style={styles.updateSportBadge}>
+            <Text style={styles.updateSportText}>{selectedSport}</Text>
+          </View>
+          <Text style={styles.updateTime}>2 min ago</Text>
+        </View>
+        <Text style={styles.updateText}>
+          🏈 Josh Allen connects with Stefon Diggs for a 42-yard touchdown!
+        </Text>
+      </View>
+    </View>
+  );
+
+  if (isLoading && !games.length) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#ef4444" />
+        <Text style={styles.loadingText}>Loading Live Games...</Text>
+      </View>
+    );
+  }
+
+  const displayGames = games.length > 0 ? games : (mockGamesData[selectedSport] || []);
+
+  return (
+    <View style={styles.container}>
+      {renderHeader()}
+      
+      <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        {renderLiveStats()}
+        
+        <View style={styles.gamesSection}>
+          <Text style={styles.sectionTitle}>
+            {selectedSport} Games {displayGames.filter(g => g.status === 'Live').length > 0 && '🔥'}
+          </Text>
+          
+          {displayGames.length > 0 ? (
+            displayGames.map((game, index) => renderGameCard(game, index))
+          ) : (
+            <View style={styles.noGamesCard}>
+              <Ionicons name="sad" size={48} color="#9ca3af" />
+              <Text style={styles.noGamesText}>No {selectedSport} games live right now</Text>
+              <Text style={styles.noGamesSubtext}>Check back later for live action!</Text>
+            </View>
+          )}
+        </View>
+
+        {renderLiveUpdates()}
+        
+        <View style={styles.comingUpSection}>
+          <Text style={styles.sectionTitle}>Coming Up Next</Text>
+          <View style={styles.upcomingCard}>
+            <View style={styles.upcomingTeams}>
+              <Text style={styles.upcomingTeam}>Phoenix Suns</Text>
+              <Text style={styles.upcomingVs}>@</Text>
+              <Text style={styles.upcomingTeam}>Denver Nuggets</Text>
+            </View>
+            <View style={styles.upcomingInfo}>
+              <Text style={styles.upcomingTime}>10:00 PM ET</Text>
+              <Text style={styles.upcomingChannel}>ESPN</Text>
+            </View>
+            <TouchableOpacity style={styles.reminderButton}>
+              <Ionicons name="notifications" size={14} color="#3b82f6" />
+              <Text style={styles.reminderText}>Set Reminder</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#cbd5e1',
+    fontSize: 16,
+  },
+  headerShadow: {
+    backgroundColor: '#dc2626',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  header: {
+    padding: 25,
+    paddingTop: 60,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  headerContent: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  liveIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  liveIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#fef3c7',
+    marginRight: 8,
+  },
+  liveText: {
+    color: '#fef3c7',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: 'white',
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 5,
+    textAlign: 'center',
+  },
+  sportsScroll: {
+    marginTop: 10,
+  },
+  sportTab: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginHorizontal: 5,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    position: 'relative',
+  },
+  activeSportTab: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  sportTabText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  activeSportTabText: {
+    color: 'white',
+  },
+  notificationDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ef4444',
+  },
+  statsContainer: {
+    margin: 15,
+    marginTop: 20,
+    backgroundColor: '#1e293b',
+    padding: 15,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  statsTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#f8fafc',
+    marginBottom: 15,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  statCard: {
+    width: '48%',
+    backgroundColor: '#1e293b',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#f8fafc',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginTop: 5,
+    textAlign: 'center',
+  },
+  gamesSection: {
+    margin: 15,
+    marginTop: 10,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#f8fafc',
+    marginBottom: 15,
+  },
+  gameCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 15,
+    marginBottom: 15,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#334155',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  gameHeader: {
+    flexDirection: 'row',
+    padding: 20,
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+  },
+  teamColumn: {
+    flex: 2,
+    alignItems: 'center',
+  },
+  teamLogo: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginBottom: 8,
+  },
+  teamName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f8fafc',
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  teamRecord: {
+    fontSize: 11,
+    color: '#94a3b8',
+  },
+  scoreColumn: {
+    flex: 3,
+    alignItems: 'center',
+  },
+  scoreContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  score: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#f8fafc',
+    minWidth: 60,
+    textAlign: 'center',
+  },
+  vsContainer: {
+    alignItems: 'center',
+    marginHorizontal: 10,
+  },
+  vsText: {
+    fontSize: 24,
+    color: '#94a3b8',
+    marginBottom: 5,
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'white',
+    marginRight: 4,
+  },
+  liveBadgeText: {
+    fontSize: 10,
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  timeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  period: {
+    fontSize: 14,
+    color: '#f8fafc',
+    marginRight: 10,
+  },
+  timeRemaining: {
+    fontSize: 14,
+    color: '#f59e0b',
+    fontWeight: '600',
+  },
+  gameDetails: {
+    padding: 15,
+    backgroundColor: '#1e293b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  detailText: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginLeft: 4,
+    marginRight: 15,
+  },
+  detailIcon: {
+    marginLeft: 15,
+  },
+  lastPlay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  lastPlayText: {
+    fontSize: 13,
+    color: '#cbd5e1',
+    marginLeft: 8,
+    flex: 1,
+  },
+  keyPlayers: {
+    padding: 15,
+    backgroundColor: '#0f172a',
+  },
+  keyPlayersTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f8fafc',
+    marginBottom: 10,
+  },
+  playersRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  playerStats: {
+    flex: 1,
+    backgroundColor: '#1e293b',
+    padding: 10,
+    borderRadius: 8,
+    marginHorizontal: 5,
+  },
+  playerName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#f8fafc',
+    marginBottom: 5,
+    textAlign: 'center',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  stat: {
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#f8fafc',
+  },
+  statLabel: {
+    fontSize: 10,
+    color: '#94a3b8',
+  },
+  gameActions: {
+    flexDirection: 'row',
+    padding: 15,
+    backgroundColor: '#1e293b',
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  actionText: {
+    fontSize: 12,
+    color: '#cbd5e1',
+    marginLeft: 6,
+  },
+  noGamesCard: {
+    backgroundColor: '#1e293b',
+    padding: 40,
+    borderRadius: 15,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  noGamesText: {
+    fontSize: 18,
+    color: '#f8fafc',
+    marginTop: 15,
+    marginBottom: 5,
+  },
+  noGamesSubtext: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+  },
+  updatesContainer: {
+    margin: 15,
+    marginTop: 10,
+  },
+  updatesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  updatesTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#f8fafc',
+  },
+  seeAll: {
+    color: '#3b82f6',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  updateCard: {
+    backgroundColor: '#1e293b',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#3b82f6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  updateHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  updateSportBadge: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  updateSportText: {
+    fontSize: 10,
+    color: 'white',
+    fontWeight: '600',
+  },
+  updateTime: {
+    fontSize: 10,
+    color: '#94a3b8',
+  },
+  updateText: {
+    fontSize: 13,
+    color: '#cbd5e1',
+    lineHeight: 18,
+  },
+  comingUpSection: {
+    margin: 15,
+    marginTop: 10,
+    marginBottom: 30,
+  },
+  upcomingCard: {
+    backgroundColor: '#1e293b',
+    padding: 20,
+    borderRadius: 15,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  upcomingTeams: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  upcomingTeam: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#f8fafc',
+  },
+  upcomingVs: {
+    fontSize: 14,
+    color: '#94a3b8',
+    marginHorizontal: 15,
+  },
+  upcomingInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  upcomingTime: {
+    fontSize: 14,
+    color: '#f59e0b',
+    marginRight: 15,
+  },
+  upcomingChannel: {
+    fontSize: 14,
+    color: '#94a3b8',
+  },
+  reminderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  reminderText: {
+    fontSize: 14,
+    color: '#3b82f6',
+    marginLeft: 6,
+  },
+});
+
+export default LiveGamesScreen;

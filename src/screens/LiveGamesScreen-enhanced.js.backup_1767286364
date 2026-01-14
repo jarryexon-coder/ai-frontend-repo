@@ -1,0 +1,393 @@
+// src/screens/LiveGamesScreen-enhanced-FIXED.js
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  RefreshControl,
+  TouchableOpacity,
+  FlatList,
+  SafeAreaView
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSearch } from '../providers/SearchProvider';
+
+export default function LiveGamesScreen({ navigation }) {
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [liveGames, setLiveGames] = useState([]);
+  const [filter, setFilter] = useState('all');
+  
+  const { searchQuery } = useSearch();
+
+  // FIXED: useCallback to prevent recreation on every render
+  const loadLiveGames = useCallback(async (isRefresh = false) => {
+    try {
+      if (!isRefresh) setLoading(true);
+      
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Mock live games data
+      const mockGames = [
+        {
+          id: 1,
+          sport: 'NFL',
+          homeTeam: 'Kansas City Chiefs',
+          awayTeam: 'Baltimore Ravens',
+          homeScore: 24,
+          awayScore: 17,
+          quarter: '4th',
+          time: '2:34',
+          status: 'live'
+        },
+        {
+          id: 2,
+          sport: 'NBA',
+          homeTeam: 'Los Angeles Lakers',
+          awayTeam: 'Golden State Warriors',
+          homeScore: 98,
+          awayScore: 102,
+          quarter: '3rd',
+          time: '5:12',
+          status: 'live'
+        },
+        {
+          id: 3,
+          sport: 'NHL',
+          homeTeam: 'Toronto Maple Leafs',
+          awayTeam: 'Boston Bruins',
+          homeScore: 2,
+          awayScore: 1,
+          period: '2nd',
+          time: '8:45',
+          status: 'live'
+        },
+        {
+          id: 4,
+          sport: 'MLB',
+          homeTeam: 'New York Yankees',
+          awayTeam: 'Boston Red Sox',
+          homeScore: 3,
+          awayScore: 2,
+          inning: '7th',
+          status: 'live'
+        },
+        {
+          id: 5,
+          sport: 'NFL',
+          homeTeam: 'San Francisco 49ers',
+          awayTeam: 'Detroit Lions',
+          homeScore: 31,
+          awayScore: 28,
+          quarter: 'Final',
+          status: 'final'
+        }
+      ];
+      
+      // Apply filter if needed
+      let filteredGames = mockGames;
+      if (filter !== 'all') {
+        filteredGames = mockGames.filter(game => game.sport === filter);
+      }
+      
+      setLiveGames(filteredGames);
+      
+    } catch (error) {
+      console.error('Error loading live games:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [filter]); // FIXED: Added filter as dependency
+
+  // FIXED: useEffect with proper dependencies
+  useEffect(() => {
+    loadLiveGames();
+  }, [loadLiveGames]); // Now loadLiveGames is stable due to useCallback
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadLiveGames(true);
+  }, [loadLiveGames]);
+
+  const renderGameItem = ({ item }) => (
+    <TouchableOpacity style={styles.gameCard}>
+      <View style={styles.gameHeader}>
+        <View style={styles.sportBadge}>
+          <Text style={styles.sportText}>{item.sport}</Text>
+        </View>
+        <View style={styles.gameStatus}>
+          <View style={[styles.statusDot, { 
+            backgroundColor: item.status === 'live' ? '#ef4444' : '#10b981' 
+          }]} />
+          <Text style={styles.statusText}>
+            {item.status === 'live' ? 'LIVE' : 'FINAL'} • {item.quarter || item.period || item.inning} {item.time ? `• ${item.time}` : ''}
+          </Text>
+        </View>
+      </View>
+      
+      <View style={styles.teamsContainer}>
+        <View style={styles.team}>
+          <Text style={styles.teamName}>{item.awayTeam}</Text>
+          <Text style={styles.teamScore}>{item.awayScore}</Text>
+        </View>
+        <Text style={styles.vsText}>@</Text>
+        <View style={styles.team}>
+          <Text style={styles.teamName}>{item.homeTeam}</Text>
+          <Text style={styles.teamScore}>{item.homeScore}</Text>
+        </View>
+      </View>
+      
+      <View style={styles.gameFooter}>
+        <TouchableOpacity style={styles.detailsButton}>
+          <Text style={styles.detailsText}>View Details</Text>
+          <Ionicons name="chevron-forward" size={16} color="#3b82f6" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.statsButton}>
+          <Ionicons name="stats-chart" size={18} color="#94a3b8" />
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+
+  if (loading && !refreshing) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#ef4444" />
+        <Text style={styles.loadingText}>Loading Live Games...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <LinearGradient
+        colors={['#0f172a', '#1e293b']}
+        style={styles.gradient}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Live Games</Text>
+          <TouchableOpacity style={styles.filterButton}>
+            <Ionicons name="filter" size={22} color="#94a3b8" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Sport Filters */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer}>
+          {['all', 'NFL', 'NBA', 'NHL', 'MLB'].map((sport) => (
+            <TouchableOpacity
+              key={sport}
+              style={[styles.filterPill, filter === sport && styles.activeFilterPill]}
+              onPress={() => setFilter(sport)}
+            >
+              <Text style={[styles.filterText, filter === sport && styles.activeFilterText]}>
+                {sport === 'all' ? 'All Sports' : sport}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        <FlatList
+          data={liveGames}
+          renderItem={renderGameItem}
+          keyExtractor={(item) => item.id.toString()}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#ef4444"
+              colors={['#ef4444']}
+            />
+          }
+          contentContainerStyle={styles.gamesList}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="tv" size={64} color="#334155" />
+              <Text style={styles.emptyText}>No live games at the moment</Text>
+              <Text style={styles.emptySubtext}>Check back later for live action</Text>
+            </View>
+          }
+        />
+      </LinearGradient>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  gradient: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#94a3b8',
+    marginTop: 16,
+    fontSize: 16,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  filterButton: {
+    padding: 8,
+  },
+  filterContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#1e293b',
+  },
+  filterPill: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#334155',
+    marginRight: 12,
+  },
+  activeFilterPill: {
+    backgroundColor: '#ef4444',
+  },
+  filterText: {
+    color: '#cbd5e1',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  activeFilterText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  gamesList: {
+    padding: 16,
+  },
+  gameCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  gameHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sportBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+  },
+  sportText: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  gameStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  statusText: {
+    color: '#94a3b8',
+    fontSize: 12,
+  },
+  teamsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  team: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  teamName: {
+    color: '#cbd5e1',
+    fontSize: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  teamScore: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: 'bold',
+  },
+  vsText: {
+    color: '#64748b',
+    fontSize: 14,
+    marginHorizontal: 20,
+  },
+  gameFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+    paddingTop: 16,
+  },
+  detailsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  detailsText: {
+    color: '#3b82f6',
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  statsButton: {
+    padding: 8,
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    color: '#94a3b8',
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    color: '#64748b',
+    fontSize: 14,
+    marginTop: 8,
+  },
+});

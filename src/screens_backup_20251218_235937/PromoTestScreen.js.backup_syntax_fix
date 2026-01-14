@@ -1,0 +1,332 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Button,
+  Alert,
+  ActivityIndicator,
+  TextInput,
+  SafeAreaView,
+} from 'react-native';
+import PromoCodeInput from '../components/promo/PromoCodeInput';
+import promoService from '../services/promoService';
+
+const PromoTestScreen = () => {
+  const [loading, setLoading] = useState(false);
+  const [publicCodes, setPublicCodes] = useState([]);
+  const [userId, setUserId] = useState('1'); // Default test user ID
+  const [testResults, setTestResults] = useState([]);
+
+  useEffect(() => {
+    loadPublicCodes();
+  }, []);
+
+  const addTestResult = (message, success = true) => {
+    setTestResults(prev => [
+      { id: Date.now(), message, success, timestamp: new Date().toLocaleTimeString() },
+      ...prev.slice(0, 10) // Keep last 10 results
+    ]);
+  };
+
+  const loadPublicCodes = async () => {
+    try {
+      setLoading(true);
+      addTestResult('Loading public promo codes...', 'info');
+      
+      const result = await promoService.getPublicPromoCodes();
+      setPublicCodes(result.promoCodes || []);
+      
+      addTestResult(`Loaded ${result.promoCodes?.length || 0} public promo codes`, true);
+    } catch (error) {
+      addTestResult(`Failed to load promo codes: ${error.message}`, false);
+      Alert.alert('Error', 'Failed to load promo codes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePromoApply = async (promoCode) => {
+    try {
+      setLoading(true);
+      addTestResult(`Applying promo code: ${promoCode.code}...`, 'info');
+      
+      const result = await promoService.applyPromoCode(promoCode.code, parseInt(userId));
+      
+      addTestResult(`✅ Promo code ${promoCode.code} applied successfully!`, true);
+      Alert.alert('Success!', `Promo code ${promoCode.code} applied successfully!`);
+      
+      // Refresh public codes to see updated usage counts
+      loadPublicCodes();
+    } catch (error) {
+      addTestResult(`❌ Failed to apply ${promoCode.code}: ${error.message}`, false);
+      Alert.alert('Error', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testValidation = async (code = 'WELCOME10') => {
+    try {
+      addTestResult(`Validating promo code: ${code}...`, 'info');
+      
+      const result = await promoService.validatePromoCode(code);
+      
+      if (result.valid) {
+        addTestResult(`✅ ${code} is valid: ${result.promoCode.description}`, true);
+      } else {
+        addTestResult(`❌ ${code} is invalid`, false);
+      }
+    } catch (error) {
+      addTestResult(`❌ Validation failed for ${code}: ${error.message}`, false);
+    }
+  };
+
+  const runAllTests = async () => {
+    addTestResult('Running all tests...', 'info');
+    await testValidation('WELCOME10');
+    await testValidation('INVALIDCODE');
+    loadPublicCodes();
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Promo System Test</Text>
+          <Text style={styles.subtitle}>Test the complete promo code system</Text>
+        </View>
+
+        <View style={styles.controls}>
+          <Text style={styles.sectionTitle}>Test Controls</Text>
+          
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Test User ID:</Text>
+            <TextInput
+              style={styles.input}
+              value={userId}
+              onChangeText={setUserId}
+              keyboardType="numeric"
+              placeholder="Enter user ID"
+            />
+          </View>
+
+          <View style={styles.buttonRow}>
+            <Button title="Run All Tests" onPress={runAllTests} color="#007AFF" />
+            <Button title="Refresh Codes" onPress={loadPublicCodes} color="#34C759" />
+          </View>
+        </View>
+
+        <View style={styles.testSection}>
+          <Text style={styles.sectionTitle}>Test Results</Text>
+          {testResults.map((result, index) => { const key = `result-${index}`; return (
+            <View key={result.id} style={[styles.resultItem, !result.success && styles.resultError]}>
+              <Text style={styles.resultText}>
+                [{result.timestamp}] {result.message}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.promoSection}>
+          <Text style={styles.sectionTitle}>Apply Promo Code</Text>
+          <PromoCodeInput onApply={handlePromoApply} />
+        </View>
+
+        <View style={styles.publicSection}>
+          <Text style={styles.sectionTitle}>
+            Public Promo Codes {loading && <ActivityIndicator size="small" />}
+          </Text>
+          
+          {publicCodes.length === 0 ? (
+            <Text style={styles.emptyText}>No promo codes loaded</Text>
+          ) : (
+            publicCodes.map((code, index) => { const key = `code-${index}`; return (
+              <View key={code.id} style={styles.codeCard}>
+                <View style={styles.codeHeader}>
+                  <Text style={styles.codeName}>{code.code}</Text>
+                  <Text style={styles.codeDiscount}>
+                    {code.discount_type === 'percentage' ? `${code.discount_value}% off` : 
+                     code.discount_type === 'fixed' ? `$${code.discount_value} off` :
+                     `${code.discount_value}-day trial`}
+                  </Text>
+                </View>
+                <Text style={styles.codeDescription}>{code.description}</Text>
+                <View style={styles.codeFooter}>
+                  <Text style={styles.codeUsage}>
+                    Used: {code.uses_count} of {code.max_uses || '∞'}
+                  </Text>
+                  <Button 
+                    title="Test Validate" 
+                    onPress={() => testValidation(code.code)}
+                    color="#5856D6"
+                  />
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        <View style={styles.infoSection}>
+          <Text style={styles.sectionTitle}>Testing Instructions</Text>
+          <Text style={styles.infoText}>
+            1. Make sure backend is running on 10.0.0.183:3000{'\n'}
+            2. Set the test User ID (get from database){'\n'}
+            3. Use "Run All Tests" for quick validation{'\n'}
+            4. Apply promo codes to see them in action{'\n'}
+            5. Check database for changes
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  header: {
+    marginBottom: 30,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#212529',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#6c757d',
+  },
+  controls: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#212529',
+    marginBottom: 16,
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#495057',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ced4da',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    backgroundColor: 'white',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  testSection: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 20,
+    maxHeight: 200,
+  },
+  resultItem: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f3f5',
+  },
+  resultError: {
+    backgroundColor: '#fff5f5',
+  },
+  resultText: {
+    fontSize: 14,
+    color: '#495057',
+  },
+  promoSection: {
+    marginBottom: 20,
+  },
+  publicSection: {
+    marginBottom: 20,
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: '#6c757d',
+    fontStyle: 'italic',
+    padding: 20,
+  },
+  codeCard: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  codeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  codeName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#212529',
+  },
+  codeDiscount: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#28a745',
+  },
+  codeDescription: {
+    fontSize: 14,
+    color: '#6c757d',
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  codeFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  codeUsage: {
+    fontSize: 14,
+    color: '#6c757d',
+  },
+  infoSection: {
+    backgroundColor: '#e7f5ff',
+    padding: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#a5d8ff',
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#1864ab',
+    lineHeight: 22,
+  },
+});
+
+export default PromoTestScreen;

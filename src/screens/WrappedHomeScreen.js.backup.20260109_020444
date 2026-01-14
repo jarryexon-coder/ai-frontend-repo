@@ -1,0 +1,11 @@
+import React from 'react';
+import { SearchProvider } from '../providers/SearchProvider';
+import HomeScreen from './HomeScreen-working.js';
+
+export default function WrappedHomeScreen(props) {
+  return (
+    <SearchProvider>
+      <HomeScreen {...props} />
+    </SearchProvider>
+  );
+}

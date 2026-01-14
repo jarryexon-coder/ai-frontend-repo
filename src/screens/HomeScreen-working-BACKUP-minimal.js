@@ -1,0 +1,385 @@
+// src/screens/HomeScreen-working-FIXED3.js
+import React from 'react';
+import { 
+  View, Text, StyleSheet, SafeAreaView, 
+  ScrollView, TouchableOpacity 
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+
+export default function HomeScreen({ navigation }) {
+  // Navigation helper for grouped screens - FIXED VERSION
+  const navigateToScreen = (screenName) => {
+    // // Special cases first
+    if (screenName === 'MarketMoves') {
+      navigation.navigate('EditorsUpdates');
+      return;
+    }
+    
+    if (screenName === 'Analytics') {
+      navigation.navigate('AnalyticsTab', { screen: 'AnalyticsMain' });
+      return;
+    }
+    
+    // Determine which stack the screen belongs to
+    if (['NFL', 'LiveGames', 'NHLStatsTrends', 'SportsWire'].includes(screenName)) {
+      navigation.navigate('LiveSports', { screen: screenName });
+    } else if (['PlayerMetrics', 'PlayerDashboard', 'MatchAnalytics'].includes(screenName)) {
+      navigation.navigate('AnalyticsTab', { screen: screenName });
+    } else if (['Predictions', 'ParlayArchitect', 'ExpertSelections'].includes(screenName)) {
+      navigation.navigate('WinnersCircle', { screen: screenName });
+    } else if (['Fantasy', 'Login', 'PremiumAccess'].includes(screenName)) {
+      navigation.navigate('PremiumTab', { screen: screenName });
+    } else {
+      navigation.navigate(screenName);
+    }
+  };
+
+  // Reusable Badge Components
+  const FreeBadge = () => (
+    <View style={styles.freeBadge}>
+      <Text style={styles.freeBadgeText}>FREE</Text>
+    </View>
+  );
+
+  const PremiumBadge = () => (
+    <View style={styles.premiumBadge}>
+      <Text style={styles.premiumBadgeText}>PREMIUM</Text>
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* ===== HEADER ===== */}
+      <View style={styles.header}>
+        <View style={styles.headerContent}>
+          <Ionicons name="football" size={36} color="#ef4444" />
+          <Text style={styles.title}>Sports Pro Analytics</Text>
+          <Text style={styles.subtitle}>Premium Insights & Real-time Data</Text>
+        </View>
+      </View>
+      
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        
+        {/* ===== ALL-ACCESS SECTION ===== */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="globe" size={24} color="#10b981" />
+            <Text style={styles.sectionTitle}>All-Access</Text>
+          </View>
+          <Text style={styles.sectionDescription}>Free features available to all users</Text>
+          
+          <View style={styles.tabsContainer}>
+            {/* Market Moves */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('MarketMoves')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#10b98120' }]}>
+                <Ionicons name="megaphone" size={24} color="#10b981" />
+              </View>
+              <Text style={styles.tabTitle}>Market Moves</Text>
+              <Text style={styles.tabSubtitle}>Latest news & insights</Text>
+              <FreeBadge />
+            </TouchableOpacity>
+            
+            {/* Live Games */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('LiveGames')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#ef444420' }]}>
+                <Ionicons name="play-circle" size={24} color="#ef4444" />
+              </View>
+              <Text style={styles.tabTitle}>Live Games</Text>
+              <Text style={styles.tabSubtitle}>Real-time scores & stats</Text>
+              <FreeBadge />
+            </TouchableOpacity>
+            
+            {/* NHL Stats Trends */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('NHLStatsTrends')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#0891b220' }]}>
+                <Ionicons name="ice-cream" size={24} color="#0891b2" />
+              </View>
+              <Text style={styles.tabTitle}>NHL Stats Trends</Text>
+              <Text style={styles.tabSubtitle}>Hockey stats & insights</Text>
+              <FreeBadge />
+            </TouchableOpacity>
+            
+            {/* Match Analytics */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('MatchAnalytics')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#8b5cf620' }]}>
+                <Ionicons name="list" size={24} color="#8b5cf6" />
+              </View>
+              <Text style={styles.tabTitle}>Match Analytics</Text>
+              <Text style={styles.tabSubtitle}>Detailed match analysis</Text>
+              <FreeBadge />
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        {/* ===== PREMIUM ACCESS SECTION ===== */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="diamond" size={24} color="#f59e0b" />
+            <Text style={styles.sectionTitle}>Premium Access</Text>
+          </View>
+          <Text style={styles.sectionDescription}>Advanced analytics & tools</Text>
+          
+          <View style={styles.tabsContainer}>
+            {/* NFL */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('NFL')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#dc262620' }]}>
+                <Ionicons name="american-football" size={24} color="#dc2626" />
+              </View>
+              <Text style={styles.tabTitle}>NFL Analytics</Text>
+              <Text style={styles.tabSubtitle}>Advanced football stats</Text>
+              <PremiumBadge />
+            </TouchableOpacity>
+            
+            {/* Player Metrics */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('PlayerMetrics')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#3b82f620' }]}>
+                <Ionicons name="stats-chart" size={24} color="#3b82f6" />
+              </View>
+              <Text style={styles.tabTitle}>Player Metrics</Text>
+              <Text style={styles.tabSubtitle}>Player performance data</Text>
+              <PremiumBadge />
+            </TouchableOpacity>
+            
+            {/* Player Dashboard */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('PlayerDashboard')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#8b5cf620' }]}>
+                <Ionicons name="person" size={24} color="#8b5cf6" />
+              </View>
+              <Text style={styles.tabTitle}>Player Dashboard</Text>
+              <Text style={styles.tabSubtitle}>Detailed player profiles</Text>
+              <PremiumBadge />
+            </TouchableOpacity>
+            
+            {/* Fantasy */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('Fantasy')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#f59e0b20' }]}>
+                <Ionicons name="trophy" size={24} color="#f59e0b" />
+              </View>
+              <Text style={styles.tabTitle}>Fantasy Tools</Text>
+              <Text style={styles.tabSubtitle}>Fantasy league management</Text>
+              <PremiumBadge />
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        {/* ===== WINNERS ANALYTICS SECTION ===== */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="trending-up" size={24} color="#8b5cf6" />
+            <Text style={styles.sectionTitle}>Winners Analytics</Text>
+          </View>
+          <Text style={styles.sectionDescription}>Predictive tools & insights</Text>
+          
+          <View style={styles.tabsContainer}>
+            {/* Predictions */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('Predictions')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#8b5cf620' }]}>
+                <Ionicons name="trending-up" size={24} color="#8b5cf6" />
+              </View>
+              <Text style={styles.tabTitle}>AI Predictions</Text>
+              <Text style={styles.tabSubtitle}>Machine learning forecasts</Text>
+              <PremiumBadge />
+            </TouchableOpacity>
+            
+            {/* Parlay Architect */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('ParlayArchitect')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#f59e0b20' }]}>
+                <Ionicons name="build" size={24} color="#f59e0b" />
+              </View>
+              <Text style={styles.tabTitle}>Parlay Architect</Text>
+              <Text style={styles.tabSubtitle}>Custom bet construction</Text>
+              <PremiumBadge />
+            </TouchableOpacity>
+            
+            {/* Expert Selections */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('ExpertSelections')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#eab30820' }]}>
+                <Ionicons name="star" size={24} color="#eab308" />
+              </View>
+              <Text style={styles.tabTitle}>Expert Selections</Text>
+              <Text style={styles.tabSubtitle}>Daily expert picks</Text>
+              <PremiumBadge />
+            </TouchableOpacity>
+            
+            {/* Sports Wire */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('SportsWire')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#3b82f620' }]}>
+                <Ionicons name="newspaper" size={24} color="#3b82f6" />
+              </View>
+              <Text style={styles.tabTitle}>Sports Wire</Text>
+              <Text style={styles.tabSubtitle}>Latest sports headlines</Text>
+              <PremiumBadge />
+            </TouchableOpacity>
+            
+            {/* Analytics */}
+            <TouchableOpacity 
+              style={styles.tabCard}
+              onPress={() => navigateToScreen('Analytics')}
+            >
+              <View style={[styles.tabIcon, { backgroundColor: '#06b6d420' }]}>
+                <Ionicons name="analytics" size={24} color="#06b6d4" />
+              </View>
+              <Text style={styles.tabTitle}>Advanced Analytics</Text>
+              <Text style={styles.tabSubtitle}>Deep data analysis</Text>
+              <PremiumBadge />
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        {/* ===== BOTTOM SPACER ===== */}
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0f172a' },
+  header: { 
+    paddingVertical: 20, 
+    paddingHorizontal: 16,
+    backgroundColor: '#1e293b', 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#334155' 
+  },
+  headerContent: {
+    alignItems: 'center',
+  },
+  title: { 
+    color: '#fff', 
+    fontSize: 28, 
+    fontWeight: 'bold', 
+    marginTop: 10,
+    textAlign: 'center'
+  },
+  subtitle: { 
+    color: '#94a3b8', 
+    fontSize: 16, 
+    marginTop: 5,
+    textAlign: 'center'
+  },
+  content: { flex: 1, padding: 16 },
+  section: {
+    marginBottom: 32,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    color: '#fff', 
+    fontSize: 24, 
+    fontWeight: 'bold',
+    marginLeft: 12,
+  },
+  sectionDescription: {
+    color: '#94a3b8',
+    fontSize: 15,
+    marginBottom: 16,
+    marginLeft: 36,
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  tabCard: {
+    backgroundColor: '#1e293b',
+    width: '48%',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+    position: 'relative',
+  },
+  tabIcon: {
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 12,
+    alignSelf: 'flex-start',
+  },
+  tabTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  tabSubtitle: {
+    color: '#94a3b8',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  freeBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: '#10b98120',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#10b981',
+  },
+  freeBadgeText: {
+    color: '#10b981',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  premiumBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: '#f59e0b20',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#f59e0b',
+  },
+  premiumBadgeText: {
+    color: '#f59e0b',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  bottomSpacer: {
+    height: 32,
+  },
+});
