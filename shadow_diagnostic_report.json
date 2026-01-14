@@ -1,0 +1,36 @@
+{
+  "timestamp": "2025-12-30T05:30:36.138Z",
+  "stats": {
+    "totalIssues": 8,
+    "filesScanned": 18,
+    "filesWithIssues": 2,
+    "byGroup": {
+      "premium_access": {
+        "issues": 0,
+        "files": 4
+      },
+      "daily_locks": {
+        "issues": 6,
+        "files": 7
+      },
+      "other_screens": {
+        "issues": 2,
+        "files": 9
+      }
+    }
+  },
+  "recommendations": [
+    {
+      "priority": "MEDIUM",
+      "action": "ADD_BACKGROUND_COLORS",
+      "description": "Add explicit backgroundColor to all shadowed elements",
+      "files": "All files with shadow issues"
+    },
+    {
+      "priority": "LOW",
+      "action": "REDUCE_SHADOW_COMPLEXITY",
+      "description": "Replace complex shadows with simpler borders where possible",
+      "files": "Files with shadowRadius > 8"
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "909799347654",
+    "project_id": "ai-fantasy-assistant-aa2f6",
+    "storage_bucket": "ai-fantasy-assistant-aa2f6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:909799347654:android:ce98f0bc1ce30349f48ec7",
+        "android_client_info": {
+          "package_name": "com.jerryexon.analyticsassistant"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAurAdpcMEl_Aagu2vRa1jWmdIKKZUqVXo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:909799347654:android:11aa420658bfedd8f48ec7",
+        "android_client_info": {
+          "package_name": "com.jerryjiya.myapp_new"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAurAdpcMEl_Aagu2vRa1jWmdIKKZUqVXo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -11,3 +11,7 @@ node_modules/
 .expo/
 dist/
 web-build/
+
+# Backup files
+*.backup*
+*-backup.js
