@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "node server.js",
-    "build": "expo export:web",
+    "build": "expo export -p web",
     "prestart": "npm run build",
     "android": "expo run:android",
     "ios": "expo run:ios",
